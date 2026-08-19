@@ -10,7 +10,8 @@ const FIT_MARGIN = 40;
 // fits (zoom = 1). Each end reaches ZOOM_RANGE× in or out on a log scale.
 const DEFAULT_ZOOM_PCT = 50;
 const ZOOM_RANGE = 5;
-const pctToZoom = (pct: number) => ZOOM_RANGE ** ((pct - DEFAULT_ZOOM_PCT) / DEFAULT_ZOOM_PCT);
+const pctToZoom = (pct: number) =>
+  ZOOM_RANGE ** ((pct - DEFAULT_ZOOM_PCT) / DEFAULT_ZOOM_PCT);
 
 export interface PendulumView {
   id: number;
@@ -20,7 +21,8 @@ export interface PendulumView {
 }
 
 // config.anchor.x is a 0..1 fraction of the beam span.
-const anchorX = (fraction: number) => BEAM_PAD + (WIDTH - 2 * BEAM_PAD) * fraction;
+const anchorX = (fraction: number) =>
+  BEAM_PAD + (WIDTH - 2 * BEAM_PAD) * fraction;
 // Bob radius grows gently with mass so heavier pendulums read as larger.
 const bobRadius = (mass: number) => 8 + Math.sqrt(mass) * 4;
 
@@ -31,7 +33,8 @@ const bobRadius = (mass: number) => 8 + Math.sqrt(mass) * 4;
  */
 function fitViewBox(ps: PendulumView[], zoom: number): string {
   const reach = (c: PendulumConfig) =>
-    c.length * Math.sin(Math.min(Math.abs(c.initialAngle), Math.PI / 2)) + bobRadius(c.mass);
+    c.length * Math.sin(Math.min(Math.abs(c.initialAngle), Math.PI / 2)) +
+    bobRadius(c.mass);
   const xs = ps.flatMap(({ config }) => {
     const ax = anchorX(config.anchor.x);
     return [ax - reach(config), ax + reach(config)];
@@ -39,7 +42,10 @@ function fitViewBox(ps: PendulumView[], zoom: number): string {
   const minX = Math.min(BEAM_PAD, ...xs) - FIT_MARGIN;
   const maxX = Math.max(WIDTH - BEAM_PAD, ...xs) + FIT_MARGIN;
   const minY = BEAM_Y - FIT_MARGIN;
-  const maxY = Math.max(...ps.map((p) => BEAM_Y + p.config.length + bobRadius(p.config.mass))) + FIT_MARGIN;
+  const maxY =
+    Math.max(
+      ...ps.map((p) => BEAM_Y + p.config.length + bobRadius(p.config.mass)),
+    ) + FIT_MARGIN;
 
   const w = (maxX - minX) / zoom;
   const h = (maxY - minY) / zoom;
@@ -60,7 +66,13 @@ export function PendulumCanvas({ pendulums }: { pendulums: PendulumView[] }) {
         role="img"
         aria-label="Pendulum simulation"
       >
-        <line className="beam" x1={BEAM_PAD - 20} y1={BEAM_Y} x2={WIDTH - BEAM_PAD + 20} y2={BEAM_Y} />
+        <line
+          className="beam"
+          x1={BEAM_PAD - 20}
+          y1={BEAM_Y}
+          x2={WIDTH - BEAM_PAD + 20}
+          y2={BEAM_Y}
+        />
         {pendulums.map(({ id, config, angle }) => {
           const ax = anchorX(config.anchor.x);
           const bx = ax + config.length * Math.sin(angle);
@@ -68,7 +80,12 @@ export function PendulumCanvas({ pendulums }: { pendulums: PendulumView[] }) {
           return (
             <g key={id}>
               <line className="string" x1={ax} y1={BEAM_Y} x2={bx} y2={by} />
-              <circle className="bob" cx={bx} cy={by} r={bobRadius(config.mass)} />
+              <circle
+                className="bob"
+                cx={bx}
+                cy={by}
+                r={bobRadius(config.mass)}
+              />
             </g>
           );
         })}

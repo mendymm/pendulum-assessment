@@ -1,4 +1,6 @@
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+}
 
 .app {
   position: relative;
@@ -41,6 +43,17 @@
   cursor: pointer;
 }
 
-.beam { stroke: #e2e8f0; stroke-width: 6; stroke-linecap: round; }
-.string { stroke: #94a3b8; stroke-width: 2; }
-.bob { fill: #3b82f6; stroke: #1e3a8a; stroke-width: 2; }
+.beam {
+  stroke: #e2e8f0;
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+.string {
+  stroke: #94a3b8;
+  stroke-width: 2;
+}
+.bob {
+  fill: #3b82f6;
+  stroke: #1e3a8a;
+  stroke-width: 2;
+}
