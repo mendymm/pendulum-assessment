@@ -1,1 +1,1 @@
-Distibuted Pendulum
+# Distributed Pendulum Sim
