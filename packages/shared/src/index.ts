@@ -1,3 +1,5 @@
+export { RUNTIME_CONFIG } from "./config";
+
 export interface PendulumConfig {
   initialAngle: number;
   mass: number;
