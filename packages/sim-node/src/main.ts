@@ -1,5 +1,3 @@
-import type { PendulumConfig } from "@pendulum/shared";
-
 async function startServer(nodeId: number) {}
 
 const nodeId = Number(process.argv[2]);

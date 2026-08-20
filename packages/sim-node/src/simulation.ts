@@ -56,13 +56,9 @@ export function transition(sim: Sim, command: Command): Outcome {
         status: "running",
       });
     case "pause":
-      return outcome(
-        sim.status === "running" ? { ...sim, status: "paused" } : sim,
-      );
+      return outcome(sim.status === "running" ? { ...sim, status: "paused" } : sim);
     case "resume":
-      return outcome(
-        sim.status === "paused" ? { ...sim, status: "running" } : sim,
-      );
+      return outcome(sim.status === "paused" ? { ...sim, status: "running" } : sim);
     case "configure":
       return outcome({ ...sim, config: command.config });
   }

@@ -10,12 +10,7 @@ export interface PendulumConfig {
   };
 }
 
-export type SimStatus =
-  | "running"
-  | "paused"
-  | "stopped"
-  | "restarting"
-  | "countdown";
+export type SimStatus = "running" | "paused" | "stopped" | "restarting" | "countdown";
 
 export interface SimSnapshot {
   // each sim has an incrementing ID
