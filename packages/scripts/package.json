@@ -1,0 +1,13 @@
+{
+  "name": "@pendulum/scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start-simulation": "npm -w @pendulum/ui run build && tsx src/startSimulation.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pendulum/shared": "*"
+  }
+}

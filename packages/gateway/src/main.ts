@@ -1,3 +1,5 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { RUNTIME_CONFIG } from "@pendulum/shared";
@@ -26,10 +28,13 @@ app.get("/api/sse", async (c) => {
 
 app.get("/api/runtime_config", (c) => c.json(RUNTIME_CONFIG));
 
-// Serve the built React UI (packages/ui/dist).
-const UI_ROOT = "../ui/dist";
+const UI_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "ui", "dist");
 app.use("/*", serveStatic({ root: UI_ROOT }));
-app.get("/*", serveStatic({ path: `${UI_ROOT}/index.html` }));
+app.get("/*", serveStatic({ path: join(UI_ROOT, "index.html") }));
+
+
+console.log(`Listing on 127.0.0.1:${RUNTIME_CONFIG.gatewayPort}`);
+
 
 serve({
   fetch: app.fetch,
