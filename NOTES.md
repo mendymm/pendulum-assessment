@@ -33,3 +33,7 @@ POST /configure configure a running simulation
 
 TODO:
 - fix the relative path include in the gateway UI dist
+- write tests for 
+    1. sim inital startup state
+    2. sim keeps state between pause/resume
+    3. sim correctly resets the pendulum state on

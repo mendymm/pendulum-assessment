@@ -10,6 +10,12 @@ export interface PendulumConfig {
   };
 }
 
+export interface Environment {
+  wind: number;
+  gravity: number;
+  damping: number;
+}
+
 export type SimStatus = "running" | "paused" | "stopped" | "restarting" | "countdown";
 
 export interface SimSnapshot {
