@@ -1,7 +1,7 @@
 export { RUNTIME_CONFIG } from "./config";
 
 export interface PendulumConfig {
-  initialAngle: number;
+  angle: number;
   mass: number;
   length: number;
   anchor: {
@@ -26,5 +26,5 @@ export interface SimSnapshot {
     y: number;
   };
   status: SimStatus;
-  initialConfig: PendulumConfig;
+  startupConfig: PendulumConfig;
 }
