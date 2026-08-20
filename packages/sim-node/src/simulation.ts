@@ -5,7 +5,7 @@
  * This setup allows me to very easily test the sim's logic
  */
 
-import type { Environment, PendulumConfig, SimStatus } from "@pendulum/shared";
+import type { Environment, PendulumConfig, SimSnapshot, SimStatus } from "@pendulum/shared";
 import { initilizePendulumState, type PendulumState, step } from "./pendulum";
 
 export interface Sim {

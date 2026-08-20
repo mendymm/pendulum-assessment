@@ -20,7 +20,7 @@ export function step(
   environment: Environment,
   dt: number,
 ): PendulumState {
-    const { length: L, mass: m } = config;
+  const { length: L, mass: m } = config;
   const { gravity: g, wind, damping } = environment;
 
   // three torques, as angular accelerations, summed
