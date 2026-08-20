@@ -20,6 +20,19 @@ export function step(
   environment: Environment,
   dt: number,
 ): PendulumState {
-  throw Error("todo");
-  // return {};
+    const { length: L, mass: m } = config;
+  const { gravity: g, wind, damping } = environment;
+
+  // three torques, as angular accelerations, summed
+  const gravityAccel = -(g / L) * Math.sin(state.angle);
+  const windAccel = (wind * Math.cos(state.angle)) / (m * L);
+  const dampingAccel = -damping * state.angularVelocity;
+
+  const angularAcceleration = gravityAccel + windAccel + dampingAccel;
+
+  // semi-implicit (symplectic) Euler: velocity first, then position uses the NEW velocity
+  const angularVelocity = state.angularVelocity + angularAcceleration * dt;
+  const angle = state.angle + angularVelocity * dt;
+
+  return { angle, angularVelocity };
 }
