@@ -20,7 +20,7 @@ async function startServer(nodeId: number) {
 
   // the only writer of `sim` during operation
   const consume = async () => {
-    const ticks = 0; // TEMP: for the throttled log below
+    let ticks = 0; // TEMP: for the throttled log below
     while (true) {
       const { command, reply } = await inbox.recv();
 
@@ -42,7 +42,7 @@ async function startServer(nodeId: number) {
       reply?.(out);
 
       // TEMP: prove the loop is advancing physics. Remove when snapshots exist.
-      if (command.type === "tick") {
+      if (command.type === "tick" && ++ticks % 20 === 0) {
         console.log(`[node ${nodeId}] angle=${sim.pendulumState.angle.toFixed(3)}`);
       }
 
