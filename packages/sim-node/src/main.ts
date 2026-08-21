@@ -1,20 +1,85 @@
 import { RUNTIME_CONFIG } from "@pendulum/shared";
-import { createSim } from "./simulation";
+import { Envelope, mailbox } from "./mailbox";
+import { createSim, currentLocation, type Sim, toBobPositions, transition } from "./simulation";
+import { connectToGateway } from "./gatewayWsConn";
+import { executeEffects } from "./execEffects";
 
 // each physics `step` advances this amount of time (DELTA T)
 const DT = 1 / RUNTIME_CONFIG.simHz;
 
-// clamp the max amount of ticks we will catch up to in a single wake up
-const MAX_CATCHUP_TICKS = 100;
-
-const MAX_FRAME = MAX_CATCHUP_TICKS * DT;
+const MAX_CATCHUP_MS = 250; // after a stall, drop the backlog instead of flooding the inbox
 
 async function startServer(nodeId: number) {
-  let listingPort = RUNTIME_CONFIG.simStartPort+nodeId;
+  const listingPort = RUNTIME_CONFIG.simStartPort + nodeId;
   console.log(`Listing on 127.0.0.1:${listingPort}`);
-  // let sim = createSim(nodeId,{
-  //   anchor
-  // })
+
+  const inbox = mailbox<Envelope>();
+  const { neighbors, sendWsMessage } = connectToGateway(nodeId, inbox);
+
+  let sim: Sim | undefined; // undefined until configured (via HTTP /start, a later step)
+
+  // the only writer of `sim` during operation
+  const consume = async () => {
+    let ticks = 0; // TEMP: for the throttled log below
+    while (true) {
+      const { command, reply } = await inbox.recv();
+
+      console.log(command);
+      if (!sim) {
+        // no sim yet, ignore all messages, and keep the mailbox empty
+        continue;
+      }
+
+      // transition the state machine 1 step
+      const out = transition(sim, command);
+
+      if (out.result === "ok") {
+        // next time we call transition, we will use an updated sim
+        sim = out.sim;
+        // execute side-effects of the state machine
+        executeEffects(out.effects, sendWsMessage);
+      }
+      reply?.(out);
+
+      // TEMP: prove the loop is advancing physics. Remove when snapshots exist.
+      if (command.type === "tick") {
+        console.log(`[node ${nodeId}] angle=${sim.pendulumState.angle.toFixed(3)}`);
+      }
+
+      // send location
+      sendWsMessage({
+        type: "PendulumLocationUpdate",
+        data: {
+          nodeId,
+          ...currentLocation(sim),
+        },
+      });
+    }
+  };
+
+  // tick producer will send `tick` events into our queue, at a rate configured by `simHz`
+  let nextTickAt = performance.now();
+  setInterval(() => {
+    // Only feed a running sim
+    if (sim?.status !== "running") {
+      nextTickAt = performance.now(); // keep the deadline fresh while idle
+      return;
+    }
+
+    const now = performance.now();
+    if (now - nextTickAt > MAX_CATCHUP_MS) nextTickAt = now; // stall guard
+    while (now >= nextTickAt) {
+      inbox.push({ command: { type: "tick", dt: DT, worldState: toBobPositions(neighbors) } });
+      nextTickAt += DT * 1000;
+    }
+  }, 1000 / RUNTIME_CONFIG.simHz);
+
+  // TEMP: seed + start a sim so the loop has something to advance.
+  // Replaced by POST /start (which supplies the config) in the HTTP step.
+  sim = createSim(nodeId, { angle: 0.4, mass: 1, length: 1, anchor: { x: 0 } });
+  inbox.push({ command: { type: "start" } });
+
+  consume();
 }
 
 const nodeId = Number(process.argv[2]);
