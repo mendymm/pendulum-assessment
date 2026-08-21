@@ -3,9 +3,16 @@
  * but I still think it's fun. Sue me ;)
  */
 
+import { Command, Outcome } from "./simulation";
+
 export interface Mailbox<T> {
   push(item: T): void;
   recv(): Promise<T>;
+}
+
+export interface Envelope {
+  command: Command;
+  reply?: (outcome: Outcome) => void;
 }
 
 export function mailbox<T>(): Mailbox<T> {
