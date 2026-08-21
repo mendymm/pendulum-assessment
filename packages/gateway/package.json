@@ -11,10 +11,11 @@
   "dependencies": {
     "@hono/node-server": "^2.1.1",
     "@pendulum/shared": "*",
-    "hono": "^4.13.3", 
-    "ws":"^8.21.3"
+    "hono": "^4.13.3",
+    "ws": "^8.21.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/ws":"^8.18.1"
+    "@types/ws": "^8.18.1"
   }
 }
