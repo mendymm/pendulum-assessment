@@ -18,6 +18,6 @@ export const RUNTIME_CONFIG: RuntimeConfig = {
   gatewayPort: 8000,
   simStartPort: 9000,
   simCount: 2,
-  simHz: 120,
+  simHz: 60,
   uiUpdateHz: 60,
 };

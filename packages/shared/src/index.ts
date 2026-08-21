@@ -1,5 +1,5 @@
 export { RUNTIME_CONFIG } from "./config";
-export type { PendulumLocationUpdate, WsEnvelope } from "./wsMessages";
+export type { PendulumLocationUpdate, WsEnvelope, PendulumCollisionUpdate } from "./wsMessages";
 export { parseWsEnvelope } from "./wsMessages";
 
 export interface PendulumConfig {
@@ -30,4 +30,8 @@ export interface SimSnapshot {
   };
   status: SimStatus;
   startupConfig: PendulumConfig;
+}
+
+export function assertNever(x: never): never {
+  throw new Error(`unexpected value: ${JSON.stringify(x)}`);
 }
