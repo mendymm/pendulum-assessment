@@ -3,7 +3,7 @@
  * but I still think it's fun. Sue me ;)
  */
 
-import { Command, Outcome } from "./simulation";
+import type { Command, Outcome } from "./simulation";
 
 export interface Mailbox<T> {
   push(item: T): void;

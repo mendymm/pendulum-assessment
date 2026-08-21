@@ -6,8 +6,8 @@
  */
 
 import type { Environment, PendulumConfig, SimStatus } from "@pendulum/shared";
+import type { NeighborsLocation } from "./gatewayWsConn";
 import { initilizePendulumState, type PendulumState, step } from "./pendulum";
-import { NeighborsLocation } from "./gatewayWsConn";
 
 const COLLISION_THRESHOLD = 0.1;
 
@@ -127,7 +127,7 @@ export function transition(sim: Sim, command: Command): Outcome {
     case "configure":
       return ok({ ...sim, config: command.config });
 
-    case "tick":
+    case "tick": {
       if (sim.status !== "running") return reject(sim, "not running");
       const stepped = { ...sim, pendulumState: step(sim.pendulumState, sim.config, sim.environment, command.dt) };
       const me = currentLocation(stepped);
@@ -140,6 +140,7 @@ export function transition(sim: Sim, command: Command): Outcome {
             { type: "reportCollision", reportingNode: sim.id, otherNode: hit.nodeId },
           ])
         : ok(stepped);
+    }
   }
 }
 

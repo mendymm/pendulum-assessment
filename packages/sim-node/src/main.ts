@@ -1,8 +1,8 @@
 import { RUNTIME_CONFIG } from "@pendulum/shared";
-import { Envelope, mailbox } from "./mailbox";
-import { createSim, currentLocation, type Sim, toBobPositions, transition } from "./simulation";
-import { connectToGateway } from "./gatewayWsConn";
 import { executeEffects } from "./execEffects";
+import { connectToGateway } from "./gatewayWsConn";
+import { type Envelope, mailbox } from "./mailbox";
+import { createSim, currentLocation, type Sim, toBobPositions, transition } from "./simulation";
 
 // each physics `step` advances this amount of time (DELTA T)
 const DT = 1 / RUNTIME_CONFIG.simHz;
@@ -20,7 +20,7 @@ async function startServer(nodeId: number) {
 
   // the only writer of `sim` during operation
   const consume = async () => {
-    let ticks = 0; // TEMP: for the throttled log below
+    const ticks = 0; // TEMP: for the throttled log below
     while (true) {
       const { command, reply } = await inbox.recv();
 
