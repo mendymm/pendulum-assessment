@@ -1,7 +1,8 @@
 import { RUNTIME_CONFIG } from "@pendulum/shared";
 import { useEffect, useState } from "react";
 
-type Location = { x: number; y: number; anchorX: number };
+// World-space (meters) bob + anchor position streamed by the gateway.
+export type Location = { x: number; y: number; anchorX: number };
 type Locations = Record<number, Location>;
 
 export function useUiUpdates(): Locations {

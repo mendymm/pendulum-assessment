@@ -22,25 +22,38 @@
   border-bottom: 1px solid rgba(226, 232, 240, 0.15);
 }
 
-.canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  background: #1e1e2e;
+.controls {
+  display: flex;
+  gap: 8px;
 }
 
-/* Vertical, volume-style zoom slider (high value at the top). */
-.zoom {
-  position: absolute;
-  right: 20px;
-  bottom: 24px;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  height: 140px;
-  accent-color: #3b82f6;
+.control-btn {
+  text-transform: capitalize;
+  padding: 6px 14px;
+  border: 1px solid rgba(226, 232, 240, 0.25);
+  border-radius: 6px;
+  background: #313244;
+  color: #e2e8f0;
+  font: inherit;
   cursor: pointer;
+}
+/* fixed width so the label swap (Pause <-> Resume) doesn't resize the box */
+.control-btn--toggle {
+  min-width: 6rem;
+}
+.control-btn:hover {
+  background: #45475a;
+}
+.control-btn:active {
+  background: #585b70;
+}
+
+.scene {
+  position: absolute;
+  /* leave the top 10% for the config bar */
+  inset: 10vh 0 0 0;
+  display: block;
+  background: #1e1e2e;
 }
 
 .beam {
@@ -52,8 +65,11 @@
   stroke: #94a3b8;
   stroke-width: 2;
 }
+.pivot {
+  fill: #e2e8f0;
+}
 .bob {
-  fill: #3b82f6;
-  stroke: #1e3a8a;
+  /* fill is set per-bob from mass; stroke gives a consistent outline */
+  stroke: rgba(0, 0, 0, 0.35);
   stroke-width: 2;
 }

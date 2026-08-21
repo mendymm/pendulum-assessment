@@ -1,32 +1,33 @@
-import { RUNTIME_CONFIG } from "@pendulum/shared";
-import { PendulumCanvas, type PendulumView } from "./components/PendulumCanvas";
+import { type PendulumConfig, RUNTIME_CONFIG } from "@pendulum/shared";
+import { Controls } from "./components/Controls";
+import { PendulumScene } from "./components/PendulumScene";
+import { computeViewBox } from "./svgTransform";
+import { useUiUpdates } from "./useUiUpdates";
 
-// Placeholder layout until live snapshots arrive from the gateway:
-// evenly-spaced anchors, each pendulum given a distinct rest angle.
-function initialPendulums(count: number): PendulumView[] {
-  return Array.from({ length: count }, (_, i) => {
-    const angle = -0.6 + (1.2 * i) / Math.max(count - 1, 1);
-    return {
-      id: i,
-      angle,
-      config: {
-        initialAngle: angle,
-        mass: 5,
-        length: 240,
-        anchor: { x: count === 1 ? 0.5 : i / (count - 1) },
-      },
-    };
-  });
+// Seed config mirroring the sim-node defaults (anchor.x = nodeId, length 1m).
+// This is the UI's source of truth for anchors / lengths / masses — it drives
+// the viewBox and the bob colors. The gateway only streams live positions, so
+// until a config feed / control panel exists this seed stands in for it.
+function seedConfigs(count: number): PendulumConfig[] {
+  return Array.from({ length: count }, (_, i) => ({
+    angle: 0.4,
+    mass: 1 + i * 2, // vary mass so the color mapping is visible
+    length: 1,
+    anchor: { x: i },
+  }));
 }
 
 export function App() {
-  const pendulums = initialPendulums(RUNTIME_CONFIG.simCount);
+  const configs = seedConfigs(RUNTIME_CONFIG.simCount);
+  const locations = useUiUpdates();
+  const viewBox = computeViewBox(configs);
 
   return (
     <div className="app">
-      <PendulumCanvas pendulums={pendulums} />
+      <PendulumScene configs={configs} locations={locations} viewBox={viewBox} />
       <header className="bar">
         <strong>Distributed Pendulum</strong>
+        <Controls />
       </header>
     </div>
   );
