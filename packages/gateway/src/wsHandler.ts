@@ -1,5 +1,5 @@
 import { upgradeWebSocket } from "@hono/node-server";
-import { parseWsEnvelope } from "@pendulum/shared";
+import { assertNever, parseWsEnvelope, WsEnvelope } from "@pendulum/shared";
 import type { WSContext, WSMessageReceive } from "hono/ws";
 
 // connected sim nodes
@@ -38,13 +38,22 @@ function onMessage(evt: MessageEvent<WSMessageReceive>) {
       const { nodeId, x, y, anchorX } = wsEnvelope.data;
       pendulumLocations.set(nodeId, { x, y, anchorX });
 
-      // fan out updates to the all other sim nodes
-      // I am assuming that we will have < ~50 nodes, so this fan out is not prohibitively expensive
-      const forward = JSON.stringify(wsEnvelope);
-      console.log(JSON.stringify(wsEnvelope));
-      for (const [id, ws] of sockets) {
-        if (id !== nodeId) ws.send(forward);
-      }
+      fanoutMessage(wsEnvelope, nodeId);
+      break;
     }
+    case "PendulumCollisionUpdate":
+      fanoutMessage(wsEnvelope, wsEnvelope.data.reportingNode);
+      break;
+    default:
+      assertNever(wsEnvelope);
+  }
+}
+
+// fan out updates to the all other sim nodes
+// I am assuming that we will have < ~50 nodes, so this fan out is not prohibitively expensive
+function fanoutMessage(msg: WsEnvelope, senderNodeId: number) {
+  const forward = JSON.stringify(msg);
+  for (const [id, ws] of sockets) {
+    if (id !== senderNodeId) ws.send(forward);
   }
 }
