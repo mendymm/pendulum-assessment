@@ -29,7 +29,6 @@ export interface SimSnapshot {
     y: number;
   };
   status: SimStatus;
-  startupConfig: PendulumConfig;
 }
 
 export function assertNever(x: never): never {

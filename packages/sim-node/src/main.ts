@@ -1,8 +1,13 @@
+import { serve } from "@hono/node-server";
 import { RUNTIME_CONFIG } from "@pendulum/shared";
+import { Hono } from "hono";
+import { addControlPlaneRoutes } from "./controlPlane";
 import { executeEffects } from "./execEffects";
 import { connectToGateway } from "./gatewayWsConn";
 import { type Envelope, mailbox } from "./mailbox";
 import { createSim, currentLocation, type Sim, toBobPositions, transition } from "./simulation";
+
+const app = new Hono();
 
 // each physics `step` advances this amount of time (DELTA T)
 const DT = 1 / RUNTIME_CONFIG.simHz;
@@ -14,6 +19,10 @@ async function startServer(nodeId: number) {
   console.log(`Listing on 127.0.0.1:${listingPort}`);
 
   const inbox = mailbox<Envelope>();
+
+  addControlPlaneRoutes(app, inbox);
+  serve({ fetch: app.fetch, hostname: "127.0.0.1", port: listingPort });
+
   const { neighbors, sendWsMessage } = connectToGateway(nodeId, inbox);
 
   let sim: Sim | undefined; // undefined until configured (via HTTP /start, a later step)
@@ -76,7 +85,12 @@ async function startServer(nodeId: number) {
 
   // TEMP: seed + start a sim so the loop has something to advance.
   // Replaced by POST /start (which supplies the config) in the HTTP step.
-  sim = createSim(nodeId, { angle: 0.4, mass: 1, length: 1, anchor: { x: 0 } });
+  const seed =
+    nodeId === 1
+      ? { angle: 1.0, mass: 1, length: 1, anchor: { x: 0.4 } } // collides with node 0 @ ~3.5s
+      : { angle: 0.4, mass: 1, length: 1, anchor: { x: nodeId } }; // regular spawn, spaced by id
+  sim = createSim(nodeId, seed);
+
   inbox.push({ command: { type: "start" } });
 
   consume();

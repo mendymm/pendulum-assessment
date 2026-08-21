@@ -5,7 +5,7 @@
  * This setup allows me to very easily test the sim's logic
  */
 
-import type { Environment, PendulumConfig, SimStatus } from "@pendulum/shared";
+import type { Environment, PendulumConfig, SimSnapshot, SimStatus } from "@pendulum/shared";
 import type { NeighborsLocation } from "./gatewayWsConn";
 import { initilizePendulumState, type PendulumState, step } from "./pendulum";
 
@@ -26,6 +26,9 @@ export interface BobPosition {
 }
 
 export type Command =
+  // do nothing and return the sim
+  | { type: "snapshot" }
+
   // reset's the pendulums position, and starts the sim
   | { type: "start" }
 
@@ -101,6 +104,8 @@ export function transition(sim: Sim, command: Command): Outcome {
   });
 
   switch (command.type) {
+    case "snapshot":
+      return ok(sim);
     case "start":
       console.log("starting");
       return ok({
@@ -152,6 +157,15 @@ export function currentLocation(sim: Sim) {
     anchorX: anchor.x,
     x: anchor.x + L * Math.sin(angle), // bob hangs from the anchor...
     y: -L * Math.cos(angle), // ...and swings below the beam (y down)
+  };
+}
+
+export function snapshot(sim: Sim): SimSnapshot {
+  return {
+    id: sim.id,
+    angle: sim.pendulumState.angle,
+    status: sim.status,
+    position: { ...currentLocation(sim) },
   };
 }
 
