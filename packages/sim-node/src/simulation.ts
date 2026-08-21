@@ -5,8 +5,11 @@
  * This setup allows me to very easily test the sim's logic
  */
 
-import type { Environment, PendulumConfig, SimSnapshot, SimStatus } from "@pendulum/shared";
+import type { Environment, PendulumConfig, SimStatus } from "@pendulum/shared";
 import { initilizePendulumState, type PendulumState, step } from "./pendulum";
+import { NeighborsLocation } from "./gatewayWsConn";
+
+const COLLISION_THRESHOLD = 0.1;
 
 export interface Sim {
   readonly id: number;
@@ -14,6 +17,12 @@ export interface Sim {
   readonly status: SimStatus;
   readonly pendulumState: PendulumState;
   readonly environment: Environment;
+}
+
+export interface BobPosition {
+  nodeId: number;
+  x: number;
+  y: number;
 }
 
 export type Command =
@@ -29,6 +38,9 @@ export type Command =
   // reset's the pendulums position, and stops the sim
   | { type: "stop" }
 
+  // same as stop, separate event for better readability
+  | { type: "collision" }
+
   // configure the running pendulum, we allow the changing a pendulums length/mass/angle(location) at runtime
   | { type: "configure"; config: PendulumConfig }
 
@@ -37,9 +49,18 @@ export type Command =
   | { type: "setWind"; wind: number }
 
   // tick the simulation by DT, only valid from the running state
-  | { type: "tick"; dt: number };
+  // includes the latest snapshot of our internal map of the world state.
+  // passing in world state as a snapshot, ensures our state machine is not reading a global map,
+  // and makes testing easier
+  | { type: "tick"; dt: number; worldState: BobPosition[] };
 
-export type Effect = never;
+export type Effect = {
+  type: "reportCollision";
+  // the node who detected the collision, and sent the broadcast
+  reportingNode: number;
+  // the node who was involved in the collision
+  otherNode: number;
+};
 
 export interface Rejection {
   command: Command;
@@ -81,6 +102,7 @@ export function transition(sim: Sim, command: Command): Outcome {
 
   switch (command.type) {
     case "start":
+      console.log("starting");
       return ok({
         ...sim,
         pendulumState: initilizePendulumState(sim.config),
@@ -93,6 +115,7 @@ export function transition(sim: Sim, command: Command): Outcome {
     case "resume":
       return sim.status === "paused" ? ok({ ...sim, status: "running" }) : reject(sim, "not paused");
 
+    case "collision": // same as stop
     case "stop":
       return sim.status === "stopped"
         ? ok({ ...sim, status: "stopped", pendulumState: initilizePendulumState(sim.config) })
@@ -105,8 +128,31 @@ export function transition(sim: Sim, command: Command): Outcome {
       return ok({ ...sim, config: command.config });
 
     case "tick":
-      return sim.status === "running"
-        ? ok({ ...sim, pendulumState: step(sim.pendulumState, sim.config, sim.environment, command.dt) })
-        : reject(sim, "not running");
+      if (sim.status !== "running") return reject(sim, "not running");
+      const stepped = { ...sim, pendulumState: step(sim.pendulumState, sim.config, sim.environment, command.dt) };
+      const me = currentLocation(stepped);
+      const hit = command.worldState.find(
+        (p) => Math.abs(p.nodeId - sim.id) === 1 && Math.hypot(p.x - me.x, p.y - me.y) < COLLISION_THRESHOLD,
+      );
+
+      return hit
+        ? ok({ ...stepped, status: "restarting" }, [
+            { type: "reportCollision", reportingNode: sim.id, otherNode: hit.nodeId },
+          ])
+        : ok(stepped);
   }
 }
+
+// compute the current x,y location of the bob
+export function currentLocation(sim: Sim) {
+  const { length: L, anchor } = sim.config;
+  const { angle } = sim.pendulumState;
+  return {
+    anchorX: anchor.x,
+    x: anchor.x + L * Math.sin(angle), // bob hangs from the anchor...
+    y: -L * Math.cos(angle), // ...and swings below the beam (y down)
+  };
+}
+
+export const toBobPositions = (neighbors: NeighborsLocation): BobPosition[] =>
+  Array.from(neighbors.values(), ({ nodeId, x, y }) => ({ nodeId, x, y }));
