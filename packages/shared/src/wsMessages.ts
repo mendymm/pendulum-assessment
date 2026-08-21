@@ -9,8 +9,18 @@ export const PendulumLocationUpdateSchema = z.object({
 });
 export type PendulumLocationUpdate = z.infer<typeof PendulumLocationUpdateSchema>;
 
+export const PendulumCollisionUpdateSchema = z.object({
+  // the node who detected the collision, and sent the broadcast
+  reportingNode: z.number(),
+  // the node who was involved in the collision
+  otherNode: z.number(),
+});
+
+export type PendulumCollisionUpdate = z.infer<typeof PendulumCollisionUpdateSchema>;
+
 export const WsEnvelopeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("PendulumLocationUpdate"), data: PendulumLocationUpdateSchema }),
+  z.object({ type: z.literal("PendulumCollisionUpdate"), data: PendulumCollisionUpdateSchema }),
 ]);
 
 export type WsEnvelope = z.infer<typeof WsEnvelopeSchema>;
