@@ -1,5 +1,5 @@
 export { RUNTIME_CONFIG } from "./config";
-export type { PendulumLocationUpdate, WsEnvelope, PendulumCollisionUpdate } from "./wsMessages";
+export type { PendulumCollisionUpdate, PendulumLocationUpdate, WsEnvelope } from "./wsMessages";
 export { parseWsEnvelope } from "./wsMessages";
 
 export interface PendulumConfig {

@@ -1,11 +1,11 @@
 import {
   assertNever,
+  type PendulumLocationUpdate,
   parseWsEnvelope,
-  PendulumLocationUpdate,
   RUNTIME_CONFIG,
-  WsEnvelope,
+  type WsEnvelope,
 } from "@pendulum/shared";
-import { Envelope, Mailbox } from "./mailbox";
+import type { Envelope, Mailbox } from "./mailbox";
 
 export type NeighborsLocation = Map<number, PendulumLocationUpdate>;
 export type SendWsMessage = (wsMsg: WsEnvelope) => void;

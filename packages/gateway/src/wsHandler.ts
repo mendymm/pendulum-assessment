@@ -1,5 +1,5 @@
 import { upgradeWebSocket } from "@hono/node-server";
-import { assertNever, parseWsEnvelope, WsEnvelope } from "@pendulum/shared";
+import { assertNever, parseWsEnvelope, type WsEnvelope } from "@pendulum/shared";
 import type { WSContext, WSMessageReceive } from "hono/ws";
 
 // connected sim nodes
