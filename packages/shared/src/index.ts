@@ -1,4 +1,6 @@
 export { RUNTIME_CONFIG } from "./config";
+export type { PendulumLocationUpdate, WsEnvelope } from "./wsMessages";
+export { parseWsEnvelope } from "./wsMessages";
 
 export interface PendulumConfig {
   angle: number;
