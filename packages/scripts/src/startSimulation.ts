@@ -1,4 +1,4 @@
-/** 
+/**
  * vibe coded quick script, spawns the gateway and the simulation nodes
  * shows me the stdout/stderr of the spawned processes in live TUI
  */
@@ -16,7 +16,7 @@ const TSX_BIN = join(REPO_ROOT, "node_modules", ".bin", "tsx");
 const REFRESH_HZ = 10;
 const REFRESH_MS = 1000 / REFRESH_HZ;
 // how many of the most recent output lines we keep/show per process
-const LINES_PER_PROC = 2;
+const LINES_PER_PROC = 5;
 
 interface Command {
   label: string;
