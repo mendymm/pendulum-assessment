@@ -1,4 +1,3 @@
-import { assertNever } from "@pendulum/shared";
 import { Effect } from "./simulation";
 import { SendWsMessage } from "./gatewayWsConn";
 
