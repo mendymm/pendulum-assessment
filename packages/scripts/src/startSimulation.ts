@@ -6,7 +6,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { RUNTIME_CONFIG } from "@pendulum/shared";
+import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
 
 // packages/scripts/src -> repo root
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
