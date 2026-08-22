@@ -1,12 +1,13 @@
 import { upgradeWebSocket } from "@hono/node-server";
-import { assertNever, parseWsEnvelope, type WsEnvelope } from "@pendulum/shared";
+import { assertNever } from "@pendulum/shared";
+import {parseWsEnvelope, PendulumLocation, type WsEnvelope} from "@pendulum/shared/src/types";
 import type { WSContext, WSMessageReceive } from "hono/ws";
 
 // connected sim nodes
 const sockets = new Map<number, WSContext>();
 
 // location of all pendulums, constantly updated with the latest data fed from the ws
-export const pendulumLocations = new Map<number, { x: number; y: number; anchorX: number }>();
+export const pendulumLocations = new Map<number,PendulumLocation>();
 
 export const simWsHandler = upgradeWebSocket((c) => {
   const nodeId = Number(c.req.query("nodeId"));
@@ -35,10 +36,8 @@ function onMessage(evt: MessageEvent<WSMessageReceive>) {
 
   switch (wsEnvelope.type) {
     case "PendulumLocationUpdate": {
-      const { nodeId, x, y, anchorX } = wsEnvelope.data;
-      pendulumLocations.set(nodeId, { x, y, anchorX });
-
-      fanoutMessage(wsEnvelope, nodeId);
+      pendulumLocations.set(wsEnvelope.data.nodeId, wsEnvelope.data);
+      fanoutMessage(wsEnvelope, wsEnvelope.data.nodeId);
       break;
     }
     case "PendulumCollisionUpdate":

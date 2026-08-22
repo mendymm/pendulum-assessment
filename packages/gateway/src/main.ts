@@ -2,14 +2,18 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { RUNTIME_CONFIG } from "@pendulum/shared";
+import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
+import { addControlRoutes } from "./api";
 import { pendulumLocations, simWsHandler } from "./wsHandler";
 
 const app = new Hono();
 
 app.get("/api/ws", simWsHandler);
+
+// control-plane fan-out: POST /api/start|pause|resume|stop -> all nodes concurrently
+addControlRoutes(app);
 
 app.get(
   "/api/ui_updates",
@@ -29,7 +33,7 @@ app.get(
 
 app.get("/api/health", (c) => c.text("OK"));
 app.get("/api/runtime_config", (c) => c.json(RUNTIME_CONFIG));
-app.get("/api/pendulum_locations", (c) => c.json([...pendulumLocations].map(([nodeId, loc]) => ({ nodeId, ...loc }))));
+app.get("/api/pendulum_locations", (c) => c.json([...pendulumLocations].values()));
 
 const UI_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "ui", "dist");
 app.use("/*", serveStatic({ root: UI_ROOT }));
