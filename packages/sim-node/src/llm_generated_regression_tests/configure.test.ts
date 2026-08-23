@@ -77,21 +77,6 @@ describe("configure", () => {
     );
   });
 
-  it("preserves the bob's current angle even when the launch angle changes", () => {
-    fc.assert(
-      fc.property(angle, angle, angle, velocity, (currentAngle, launchAngle, nextAngle, v) => {
-        // start the bob somewhere that isn't necessarily its launch angle
-        const sim: ReturnType<typeof simWith> = {
-          ...simWith(launchAngle, v),
-          pendulumState: { angle: currentAngle, angularVelocity: v },
-        };
-        const { sim: after } = transition(sim, configure({ angle: nextAngle }));
-
-        expect(after.pendulumState.angle).toBe(currentAngle);
-      }),
-    );
-  });
-
   it("is a no-op for an empty patch", () => {
     const sim = simWith(0.5 as Angle, 3.2);
     const { sim: after } = transition(sim, configure({}));

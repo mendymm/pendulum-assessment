@@ -1,4 +1,4 @@
-import type { BobRadius, NodeId, PendulumLocation, Point } from "@pendulum/shared/src/types";
+import type { Angle, BobRadius, NodeId, PendulumLocation, Point } from "@pendulum/shared/src/types";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { detectCollision } from "../pendulum";
@@ -108,28 +108,39 @@ const run = (start: Sim, commands: Command[]): { sim: Sim; effects: Effect[] } =
 const isCollision = (e: Effect): e is Extract<Effect, { type: "reportCollision" }> => e.type === "reportCollision";
 
 describe("collision via transition", () => {
-  // with the default config (wind 0, launch angle 0) the bob hangs at rest, so after a
-  // tick its position is exactly { x: anchorX, y: -length } — a deterministic anchor for neighbors
+  // Launch straight down (angle 0) with wind 0 so the bob hangs at rest: after a tick
+  // its position is exactly { x: anchorX, y: -length } — a deterministic anchor for
+  // neighbors. We set angle 0 explicitly rather than relying on the default config,
+  // whose launch angle is non-zero.
   const sim = createSim(nodeId(0));
+  const straightDown: Command = { type: "configure", config: { angle: 0 as Angle } };
   const meAtRest: Point = { x: sim.config.anchorX, y: -sim.config.length };
-  const tickWith = (worldState: PendulumLocation[]): Command => ({ type: "tick", dt: 0.016, worldState });
+  // the shell stamps each tick with a wall-clock time; a collision detected on a
+  // tick is stamped with it, so we can assert the exact timestamp below.
+  const NOW = 1000;
+  const tickWith = (worldState: PendulumLocation[]): Command => ({ type: "tick", dt: 0.016, now: NOW, worldState });
 
-  it("emits reportCollision and enters 'restarting' when a neighbor's bob overlaps", () => {
+  it("emits reportCollision and enters 'collided' when a neighbor's bob overlaps", () => {
     const other = neighborAt(meAtRest, 0, 0, 1 as BobRadius); // sitting right on top of us
-    const { sim: after, effects } = run(sim, [{ type: "start" }, tickWith([other])]);
+    const { sim: after, effects } = run(sim, [straightDown, { type: "start" }, tickWith([other])]);
 
+    // the reported collision is a full Collision record, stamped with this tick's time
     const collision = effects.find(isCollision);
-    expect(collision?.data).toEqual({ reportingNode: 0, otherNode: 1 });
+    expect(collision?.data).toEqual({ reportingNode: 0, with: 1, timestamp: NOW });
+
     expect(effects.some((e) => e.type === "reportLocation")).toBe(true);
-    expect(after.status).toBe("restarting");
+    expect(after.status).toBe("collided");
+    // and it's recorded on the sim, ready to be merged with neighbours' reports
+    expect(after.collision).toEqual({ reportingNode: 0, with: 1, timestamp: NOW });
   });
 
   it("emits only reportLocation and stays running when the neighbor is out of reach", () => {
     const other = neighborAt(meAtRest, 0, 100, 1 as BobRadius); // 100m away — nowhere near overlapping
-    const { sim: after, effects } = run(sim, [{ type: "start" }, tickWith([other])]);
+    const { sim: after, effects } = run(sim, [straightDown, { type: "start" }, tickWith([other])]);
 
     expect(effects.some(isCollision)).toBe(false);
     expect(effects.some((e) => e.type === "reportLocation")).toBe(true);
     expect(after.status).toBe("running");
+    expect(after.collision).toBeNull();
   });
 });
