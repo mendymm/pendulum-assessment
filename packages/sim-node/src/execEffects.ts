@@ -7,9 +7,16 @@ export function executeEffects(effects: Effect[], sendWsMessage: SendWsMessage) 
       case "reportCollision":
         sendWsMessage({
           type: "PendulumCollisionUpdate",
-          data: { ...e },
+          data: e.data,
         });
-        return;
+        console.log("collision");
+        break;
+      case "reportLocation":
+        sendWsMessage({
+          type: "PendulumLocationUpdate",
+          data: e.data,
+        });
+        break;
     }
   }
 }
