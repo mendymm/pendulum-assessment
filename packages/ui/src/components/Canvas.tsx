@@ -1,5 +1,11 @@
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
+import { defaultPendulumConfig, type PendulumConfig } from "@pendulum/shared/src/types";
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { mocha } from "../theme";
+import { Pendulum, pendulumGeometry } from "./Pendulum";
+
+// Accent colors cycled across pendulums.
+const BOB_COLORS = [mocha.blue, mocha.green, mocha.peach, mocha.mauve, mocha.teal, mocha.yellow, mocha.pink, mocha.sky];
 
 /**
  * The camera into the conceptually-infinite world.
@@ -14,18 +20,56 @@ interface Camera {
   pxPerMeter: number;
 }
 
-const INITIAL_CAMERA: Camera = { x: -200, y: -30, pxPerMeter: 1.5 };
-const MIN_PX_PER_METER = 0.2;
-const MAX_PX_PER_METER = 400;
-const GRID_STEP = 100; // meters between grid lines
-const MAX_GRID_LINES = 500; // safety cap so extreme zoom-out can't flood the DOM
+const INITIAL_CAMERA: Camera = { x: -1, y: -0.5, pxPerMeter: 200 };
+const MIN_PX_PER_METER = 1;
+const MAX_PX_PER_METER = 5000;
+const MIN_GRID_GAP_PX = 30; // don't draw grid lines closer than this on screen
+const FIT_PADDING = 0.15; // fraction of extra space around content when fitting
 
-/** Integer multiples of `step` covering [lo, hi], capped to avoid runaway line counts. */
+/** Pick a "nice" world-space grid step (1/2/5 × 10ⁿ meters) so lines stay legible at any zoom. */
+function niceStep(pxPerMeter: number): number {
+  const rawStep = MIN_GRID_GAP_PX / pxPerMeter;
+  const pow = 10 ** Math.floor(Math.log10(rawStep));
+  for (const mult of [1, 2, 5, 10]) {
+    if (mult * pow >= rawStep) return mult * pow;
+  }
+  return 10 * pow;
+}
+
+/** Integer multiples of `step` covering [lo, hi]. */
 function ticks(lo: number, hi: number, step: number): number[] {
   const out: number[] = [];
-  if ((hi - lo) / step > MAX_GRID_LINES) return out;
   for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) out.push(v);
   return out;
+}
+
+/** Camera that frames all pendulums (plus the beam at y = 0) within the viewport. */
+function fitCamera(pendulums: { config: PendulumConfig }[], size: { w: number; h: number }): Camera {
+  if (pendulums.length === 0) return INITIAL_CAMERA;
+
+  let minX = 0;
+  let maxX = 0;
+  let minY = 0; // include the beam at y = 0
+  let maxY = 0;
+  for (const { config } of pendulums) {
+    const { anchorX, bobX, bobY, r } = pendulumGeometry(config);
+    minX = Math.min(minX, anchorX, bobX - r);
+    maxX = Math.max(maxX, anchorX, bobX + r);
+    minY = Math.min(minY, bobY - r);
+    maxY = Math.max(maxY, bobY + r);
+  }
+
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const worldW = (maxX - minX || 1) * (1 + 2 * FIT_PADDING);
+  const worldH = (maxY - minY || 1) * (1 + 2 * FIT_PADDING);
+  const pxPerMeter = clampZoom(Math.min(size.w / worldW, size.h / worldH));
+
+  return {
+    pxPerMeter,
+    x: cx - size.w / pxPerMeter / 2,
+    y: cy - size.h / pxPerMeter / 2,
+  };
 }
 
 export interface CameraView {
@@ -61,6 +105,25 @@ export const Canvas = memo(
     cameraRef.current = camera;
     const dragRef = useRef<{ startX: number; startY: number; camX: number; camY: number } | null>(null);
 
+    // One pendulum per sim, keyed by node id, positioned by defaultPendulumConfig.
+    const pendulums = useMemo(
+      () =>
+        Array.from({ length: RUNTIME_CONFIG.simCount }, (_, i) => ({
+          nodeId: i,
+          config: defaultPendulumConfig(i),
+        })),
+      [],
+    );
+
+    // Keep the pendulums framed until the user takes control of the camera.
+    // (Re-fits across the transient sizes emitted while the layout settles, and
+    // on window resize, but stops once the user pans or zooms.)
+    const userControlled = useRef(false);
+    useEffect(() => {
+      if (userControlled.current || size.w === 0 || size.h === 0) return;
+      setCamera(fitCamera(pendulums, size));
+    }, [pendulums, size]);
+
     // Track the container's pixel size so 1 world-meter is always square on screen.
     useEffect(() => {
       const el = containerRef.current;
@@ -77,6 +140,7 @@ export const Canvas = memo(
     const onPointerDown = useCallback(
       (e: React.PointerEvent) => {
         e.currentTarget.setPointerCapture(e.pointerId);
+        userControlled.current = true;
         dragRef.current = { startX: e.clientX, startY: e.clientY, camX: camera.x, camY: camera.y };
       },
       [camera.x, camera.y],
@@ -114,6 +178,7 @@ export const Canvas = memo(
 
     // Zoom by `factor` around a pixel anchor, keeping the world point under it fixed.
     const zoomAtPixel = useCallback((px: number, py: number, factor: number) => {
+      userControlled.current = true;
       setCamera((c) => {
         const next = clampZoom(c.pxPerMeter * factor);
         const worldX = c.x + px / c.pxPerMeter;
@@ -161,8 +226,9 @@ export const Canvas = memo(
     const right = camera.x + viewW;
     const bottom = camera.y + viewH;
 
-    const xLines = ticks(left, right, GRID_STEP);
-    const yLines = ticks(top, bottom, GRID_STEP);
+    const step = niceStep(camera.pxPerMeter);
+    const xLines = ticks(left, right, step);
+    const yLines = ticks(top, bottom, step);
 
     return (
       <div
@@ -185,20 +251,21 @@ export const Canvas = memo(
           {/* Background */}
           <rect x={left} y={top} width={viewW} height={viewH} fill={mocha.base} />
 
-          {/* Grid (100 m spacing, thin lines) */}
-          <g stroke={mocha.surface0} strokeWidth={1} vectorEffect="non-scaling-stroke">
+          {/* Grid (adaptive 1/2/5×10ⁿ m spacing, thin lines).
+              vector-effect must be on each line — it is not inherited from the <g>. */}
+          <g stroke={mocha.surface0} strokeWidth={1}>
             {xLines.map((x) => (
-              <line key={`x${x}`} x1={x} y1={top} x2={x} y2={bottom} />
+              <line key={`x${x}`} x1={x} y1={top} x2={x} y2={bottom} vectorEffect="non-scaling-stroke" />
             ))}
             {yLines.map((y) => (
-              <line key={`y${y}`} x1={left} y1={y} x2={right} y2={y} />
+              <line key={`y${y}`} x1={left} y1={y} x2={right} y2={y} vectorEffect="non-scaling-stroke" />
             ))}
           </g>
 
           {/* World origin axes (x = 0 vertical, y = 0 horizontal), emphasized */}
-          <g stroke={mocha.surface2} strokeWidth={1.5} vectorEffect="non-scaling-stroke">
-            <line x1={0} y1={top} x2={0} y2={bottom} />
-            <line x1={left} y1={0} x2={right} y2={0} />
+          <g stroke={mocha.surface2} strokeWidth={1.5}>
+            <line x1={0} y1={top} x2={0} y2={bottom} vectorEffect="non-scaling-stroke" />
+            <line x1={left} y1={0} x2={right} y2={0} vectorEffect="non-scaling-stroke" />
           </g>
 
           {/* The beam that pendulums hang from, at y = 0 */}
@@ -211,6 +278,11 @@ export const Canvas = memo(
             strokeWidth={4}
             vectorEffect="non-scaling-stroke"
           />
+
+          {/* Pendulums */}
+          {pendulums.map(({ nodeId, config }) => (
+            <Pendulum key={nodeId} config={config} color={BOB_COLORS[nodeId % BOB_COLORS.length]} />
+          ))}
         </svg>
       </div>
     );
