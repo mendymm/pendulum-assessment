@@ -1,6 +1,7 @@
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Fragment, forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { bobColor, mocha } from "../theme";
 import { AnchorHandle } from "./AnchorHandle";
+import { BobHandle } from "./BobHandle";
 import { Pendulum, pendulumGeometry, type PendulumInstance } from "./Pendulum";
 
 /**
@@ -84,6 +85,7 @@ interface CanvasProps {
   onCursorChange?: (cursor: WorldPoint | null) => void;
   onOpenConfig?: (nodeId: number, e: React.MouseEvent<HTMLButtonElement>) => void;
   onAnchorMove?: (nodeId: number, anchorX: number) => void;
+  onBobDrop?: (nodeId: number, angle: number) => void;
 }
 
 export interface CanvasHandle {
@@ -95,7 +97,7 @@ const clampZoom = (ppm: number) => Math.min(MAX_PX_PER_METER, Math.max(MIN_PX_PE
 
 export const Canvas = memo(
   forwardRef<CanvasHandle, CanvasProps>(function Canvas(
-    { pendulums, onViewChange, onCursorChange, onOpenConfig, onAnchorMove },
+    { pendulums, onViewChange, onCursorChange, onOpenConfig, onAnchorMove, onBobDrop },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -287,22 +289,36 @@ export const Canvas = memo(
           ))}
         </svg>
 
-        {/* Interactive anchor handles (fixed pixel size, projected from world space).
+        {/* Interactive handles (fixed pixel size, projected from world space).
             The layer ignores pointer events except on the handles themselves. */}
         <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
-          {pendulums.map(({ nodeId, config }) => (
-            <AnchorHandle
-              key={nodeId}
-              nodeId={nodeId}
-              x={(config.anchorX - camera.x) * camera.pxPerMeter}
-              y={(0 - camera.y) * camera.pxPerMeter}
-              pxPerMeter={camera.pxPerMeter}
-              anchorX={config.anchorX}
-              color={bobColor(nodeId)}
-              onAnchorMove={onAnchorMove}
-              onOpenConfig={onOpenConfig}
-            />
-          ))}
+          {pendulums.map(({ nodeId, config }) => {
+            const g = pendulumGeometry(config);
+            return (
+              <Fragment key={nodeId}>
+                <AnchorHandle
+                  nodeId={nodeId}
+                  x={(g.anchorX - camera.x) * camera.pxPerMeter}
+                  y={(0 - camera.y) * camera.pxPerMeter}
+                  pxPerMeter={camera.pxPerMeter}
+                  anchorX={g.anchorX}
+                  color={bobColor(nodeId)}
+                  onAnchorMove={onAnchorMove}
+                  onOpenConfig={onOpenConfig}
+                />
+                <BobHandle
+                  nodeId={nodeId}
+                  sx={(g.bobX - camera.x) * camera.pxPerMeter}
+                  sy={(g.bobY - camera.y) * camera.pxPerMeter}
+                  screenR={g.r * camera.pxPerMeter}
+                  anchorX={g.anchorX}
+                  camera={camera}
+                  containerRef={containerRef}
+                  onDrop={onBobDrop}
+                />
+              </Fragment>
+            );
+          })}
         </div>
       </div>
     );

@@ -1,4 +1,5 @@
 import { bobColor, mocha } from "../theme";
+import { CONFIG_TRIGGER_ATTR } from "./ConfigBox";
 import type { PendulumInstance } from "./Pendulum";
 
 /** Horizontally-scrollable row of nodeId chips. Clicking one opens its config box. */
@@ -27,6 +28,7 @@ export function NodeGrid({
           <button
             key={nodeId}
             type="button"
+            {...{ [CONFIG_TRIGGER_ATTR]: "" }}
             onClick={(e) => onSelect(nodeId, e)}
             style={{
               flex: "0 0 auto",

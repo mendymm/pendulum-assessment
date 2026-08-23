@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { mocha } from "../theme";
+import { CONFIG_TRIGGER_ATTR } from "./ConfigBox";
 
 const HANDLE_PX = 22;
 const DRAG_THRESHOLD_PX = 3; // movement beyond this counts as a drag, not a click
@@ -33,6 +34,7 @@ export function AnchorHandle({
   return (
     <button
       type="button"
+      {...{ [CONFIG_TRIGGER_ATTR]: "" }}
       title={`Node ${nodeId} — click to configure, drag to move`}
       onPointerDown={(e) => {
         e.stopPropagation();

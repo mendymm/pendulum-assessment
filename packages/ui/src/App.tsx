@@ -13,6 +13,7 @@ interface Selection {
   nodeId: number;
   left: number;
   top: number;
+  placement: "above" | "below";
 }
 
 export function App() {
@@ -28,10 +29,15 @@ export function App() {
 
   const selectedConfig = selected ? pendulums.find((p) => p.nodeId === selected.nodeId)?.config : undefined;
 
-  const selectNode = (nodeId: number, e: React.MouseEvent<HTMLButtonElement>) => {
+  const selectNode = (nodeId: number, e: React.MouseEvent<HTMLButtonElement>, placement: "above" | "below") => {
     const rect = e.currentTarget.getBoundingClientRect();
-    setSelected((s) => (s?.nodeId === nodeId ? null : { nodeId, left: rect.left, top: rect.bottom + 6 }));
+    const top = placement === "above" ? rect.top : rect.bottom;
+    setSelected((s) => (s?.nodeId === nodeId ? null : { nodeId, left: rect.left, top, placement }));
   };
+
+  // Anchor gear opens the box above the pendulum; the top-bar chip opens it below.
+  const openFromAnchor = (nodeId: number, e: React.MouseEvent<HTMLButtonElement>) => selectNode(nodeId, e, "above");
+  const openFromChip = (nodeId: number, e: React.MouseEvent<HTMLButtonElement>) => selectNode(nodeId, e, "below");
 
   const updateConfig = (nodeId: number, config: PendulumConfig) =>
     setPendulums((prev) => prev.map((p) => (p.nodeId === nodeId ? { ...p, config } : p)));
@@ -39,6 +45,12 @@ export function App() {
   const moveAnchor = (nodeId: number, anchorX: number) =>
     setPendulums((prev) =>
       prev.map((p) => (p.nodeId === nodeId ? { ...p, config: PendulumConfigSchema.parse({ ...p.config, anchorX }) } : p)),
+    );
+
+  // The bob drop sets the initial (drop) angle.
+  const dropBob = (nodeId: number, angle: number) =>
+    setPendulums((prev) =>
+      prev.map((p) => (p.nodeId === nodeId ? { ...p, config: PendulumConfigSchema.parse({ ...p.config, angle }) } : p)),
     );
 
   return (
@@ -70,7 +82,7 @@ export function App() {
 
         {/* Center: scrollable grid of nodeIds, pinned to the top of the bar */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center", alignSelf: "flex-start" }}>
-          <NodeGrid pendulums={pendulums} selectedNodeId={selected?.nodeId ?? null} onSelect={selectNode} />
+          <NodeGrid pendulums={pendulums} selectedNodeId={selected?.nodeId ?? null} onSelect={openFromChip} />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: "0 0 auto" }}>
@@ -109,8 +121,9 @@ export function App() {
           pendulums={pendulums}
           onViewChange={setView}
           onCursorChange={setCursor}
-          onOpenConfig={selectNode}
+          onOpenConfig={openFromAnchor}
           onAnchorMove={moveAnchor}
+          onBobDrop={dropBob}
         />
       </main>
 
@@ -120,6 +133,7 @@ export function App() {
           nodeId={selected.nodeId}
           config={selectedConfig}
           position={{ left: selected.left, top: selected.top }}
+          placement={selected.placement}
           onChange={(config) => updateConfig(selected.nodeId, config)}
           onClose={() => setSelected(null)}
         />

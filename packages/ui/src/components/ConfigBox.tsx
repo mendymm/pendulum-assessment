@@ -1,6 +1,9 @@
 import { type PendulumConfig, PendulumConfigSchema } from "@pendulum/shared/src/types";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { bobColor, mocha } from "../theme";
+
+/** Marks a trigger (gear handle / nodeId chip) so an outside-click doesn't fight its own toggle. */
+export const CONFIG_TRIGGER_ATTR = "data-config-trigger";
 
 const WIDTH_PX = 180;
 
@@ -14,20 +17,36 @@ export function ConfigBox({
   nodeId,
   config,
   position,
+  placement,
   onChange,
   onClose,
 }: {
   nodeId: number;
   config: PendulumConfig;
   position: { left: number; top: number };
+  placement: "above" | "below";
   onChange: (config: PendulumConfig) => void;
   onClose: () => void;
 }) {
+  const boxRef = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
   const [length, setLength] = useState(String(config.length));
   const [mass, setMass] = useState(String(config.mass));
   const [wind, setWind] = useState(String(config.wind));
   const [gravity, setGravity] = useState(String(config.gravity));
+
+  // Close when clicking anywhere outside the box (but not on a trigger, which
+  // manages its own open/close toggle).
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement;
+      if (boxRef.current?.contains(target)) return;
+      if (target.closest?.(`[${CONFIG_TRIGGER_ATTR}]`)) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [onClose]);
 
   // Try to commit a single field; ignore values that don't parse against the schema.
   const commit = (key: "length" | "mass" | "wind" | "gravity", raw: string) => {
@@ -40,10 +59,13 @@ export function ConfigBox({
 
   return (
     <div
+      ref={boxRef}
       style={{
         position: "fixed",
         left: position.left,
         top: position.top,
+        // Grow upward from the anchor when placed above, downward when below.
+        transform: placement === "above" ? "translateY(calc(-100% - 8px))" : "translateY(8px)",
         width: WIDTH_PX,
         boxSizing: "border-box",
         display: "flex",
@@ -59,18 +81,17 @@ export function ConfigBox({
         zIndex: 10,
       }}
     >
-      {/* Header */}
+      {/* Header — includes the two canvas-only (read-only) fields */}
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <span style={{ width: 10, height: 10, borderRadius: "50%", background: bobColor(nodeId) }} />
-        <strong style={{ flex: 1 }}>Node {nodeId}</strong>
-        <button type="button" onClick={onClose} aria-label="Close" style={closeStyle}>
+        <strong>Node {nodeId}</strong>
+        <span style={{ fontSize: 10, color: mocha.subtext0, whiteSpace: "nowrap" }}>x {config.anchorX.toFixed(2)}</span>
+        <span style={{ fontSize: 10, color: mocha.subtext0, whiteSpace: "nowrap" }}>
+          ∠ {Math.round((config.angle * 180) / Math.PI)}°
+        </span>
+        <button type="button" onClick={onClose} aria-label="Close" style={{ ...closeStyle, marginLeft: "auto" }}>
           ×
         </button>
-      </div>
-
-      {/* Read-only info */}
-      <div style={{ display: "flex", gap: 6 }}>
-        <InfoField label="anchorX" value={config.anchorX.toFixed(2)} />
       </div>
 
       {/* Editable inputs */}
@@ -186,29 +207,3 @@ function NumberField({ label, value, onChange }: { label: string; value: string;
   );
 }
 
-/** A label + read-only, greyed-out informational box (not directly editable). */
-function InfoField({ label, value }: { label: string; value: string }) {
-  return (
-    <label style={{ flex: 1, minWidth: 0 }}>
-      <span style={labelStyle}>{label}</span>
-      <input
-        type="text"
-        value={value}
-        readOnly
-        tabIndex={-1}
-        aria-disabled
-        style={{
-          width: "100%",
-          boxSizing: "border-box",
-          padding: "4px",
-          background: mocha.surface0,
-          color: mocha.overlay0,
-          border: `1px solid ${mocha.surface1}`,
-          borderRadius: 4,
-          font: "inherit",
-          cursor: "not-allowed",
-        }}
-      />
-    </label>
-  );
-}
