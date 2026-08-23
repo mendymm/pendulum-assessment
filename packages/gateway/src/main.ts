@@ -22,8 +22,21 @@ app.get(
     // wall-clock (ms) of the last frame we pushed to this UI client.
     let lastFrameSentAt = 0;
 
+    // Serialize the current world into a feed frame — the same shape the interval pushes.
+    const currentFrame = () =>
+      JSON.stringify({
+        locations: Object.fromEntries(pendulumLocations),
+        restarts: Object.fromEntries(pendulumRestarts),
+      });
+
     return {
       onOpen: (_evt, ws) => {
+        // Push the current state immediately so a client connecting to a paused/idle
+        // sim (where lastWorldChangeAt never advances) sees the world instead of a
+        // blank canvas that looks like a dead connection.
+        ws.send(currentFrame());
+        lastFrameSentAt = Date.now();
+
         timer = setInterval(() => {
           // Only push when the world actually changed (a new location, or a collision
           // countdown appearing/clearing) since our last send. While the sim is paused
@@ -31,12 +44,7 @@ app.get(
           // spamming the UI with the same frame at uiUpdateHz. The UI animates a pending
           // countdown itself from the restart deadline, so it stays live without us.
           if (lastWorldChangeAt <= lastFrameSentAt) return;
-          ws.send(
-            JSON.stringify({
-              locations: Object.fromEntries(pendulumLocations),
-              restarts: Object.fromEntries(pendulumRestarts),
-            }),
-          );
+          ws.send(currentFrame());
           lastFrameSentAt = Date.now();
         }, 1000 / RUNTIME_CONFIG.uiUpdateHz);
       },

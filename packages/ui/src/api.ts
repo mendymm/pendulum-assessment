@@ -9,6 +9,10 @@ import {
 // How long to wait before reconnecting the UI-updates socket after it drops.
 const RECONNECT_MS = 1000;
 
+// How long to allow the WebSocket handshake to complete before giving up and
+// retrying. Guards against a socket stuck in CONNECTING (which never fires onclose).
+const CONNECT_TIMEOUT_MS = 3000;
+
 /**
  * Fetch a single node's snapshot through the gateway's per-node proxy
  * (`/api/nodes/:id/snapshot` -> sim-node's `/snapshot` shim). Returns null if the
@@ -100,6 +104,17 @@ export function subscribeLocations(onUpdate: (frame: FeedFrame) => void): () => 
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     socket = new WebSocket(`${proto}//${window.location.host}/api/ui_updates`);
 
+    // If the handshake never completes, the socket sits in CONNECTING forever and
+    // onclose never fires — so the reconnect below would never schedule. Force it
+    // closed after a timeout to funnel back into the reconnect path. (This is the
+    // failure mode behind "the UI doesn't always connect": a StrictMode/proxy race
+    // can leave a socket stuck mid-handshake.)
+    const watchdog = setTimeout(() => {
+      if (socket?.readyState === WebSocket.CONNECTING) socket.close();
+    }, CONNECT_TIMEOUT_MS);
+
+    socket.onopen = () => clearTimeout(watchdog);
+
     socket.onmessage = (evt) => {
       let raw: unknown;
       try {
@@ -131,8 +146,13 @@ export function subscribeLocations(onUpdate: (frame: FeedFrame) => void): () => 
       onUpdate({ locations, restarts });
     };
 
+    // An error (refused connection, dropped upgrade) doesn't always emit a clean
+    // onclose on its own — force one so we take the reconnect path uniformly.
+    socket.onerror = () => socket?.close();
+
     // The gateway (or a node) may bounce; keep retrying until we're unsubscribed.
     socket.onclose = () => {
+      clearTimeout(watchdog);
       if (!closed) reconnect = setTimeout(connect, RECONNECT_MS);
     };
   };
