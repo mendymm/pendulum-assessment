@@ -1,10 +1,10 @@
 import type { SimSnapshot } from "@pendulum/shared/src/types";
-import { type Sim, snapshot } from "./simulation";
+import { Command, type Sim, snapshot } from "./simulation";
 
-export function debugSimState(iterCount: number, sim: Sim) {
+export function debugSimState(iterCount: number, sim: Sim, commandType: Command["type"]) {
   if (process.env.DEBUG === undefined) return;
 
-  if (iterCount % 10 === 0) {
+  if (commandType != "tick" || iterCount % 20 === 0) {
     console.log(formatSnapshot(snapshot(sim)));
   }
 }
@@ -24,13 +24,12 @@ function angleGauge(angle: number, width = 21): string {
 
 // Compact multi-line dump of a snapshot for stdout debugging in the main loop.
 export function formatSnapshot(snap: SimSnapshot): string {
-  const { nodeId, status, config, posistion: pos, bobRadius, commandsCompleted, commandsRejected } = snap;
+  const { nodeId, status, config, posistion: pos, bobRadius, commandsCompleted, commandsRejected, generation } = snap;
   const deg = ((config.angle * 180) / Math.PI).toFixed(0);
   return [
-    `node ${nodeId} · ${status}`,
-    `  angle ${config.angle.toFixed(2)}rad (${deg}°) [${angleGauge(config.angle)}]`,
+    `node ${nodeId} · ${status} · gen ${generation}`,
+    `  angle ${config.angle.toFixed(2)}rad (${deg}°) [${angleGauge(config.angle)}]  anchorX ${config.anchorX.toFixed(2)}m`,
     `  bob (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)})m  r ${bobRadius.toFixed(2)}m  len ${config.length}m  mass ${config.mass}kg`,
-    `  anchorX ${config.anchorX.toFixed(2)}m`,
     `  wind ${config.wind}N  g ${config.gravity}m/s²`,
     `  cmds ✓${commandsCompleted} ✗${commandsRejected}`,
   ].join("\n");

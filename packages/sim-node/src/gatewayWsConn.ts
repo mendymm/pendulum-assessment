@@ -42,7 +42,7 @@ export function connectToGateway(
           return;
         case "PendulumCollisionUpdate": {
           inbox.push({
-            command: { type: "collision" },
+            command: { type: "collision", collision: wsEnvelope.data },
           });
           return;
         }

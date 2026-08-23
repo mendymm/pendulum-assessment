@@ -5,11 +5,12 @@
  * This setup allows me to very easily test the sim's logic
  */
 
+import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
 import {
   bobRadius,
+  type Collision,
   defaultPendulumConfig,
   type NodeId,
-  type PendulumCollisionUpdate,
   type PendulumConfig,
   type PendulumConfigPatch,
   type PendulumLocation,
@@ -27,6 +28,8 @@ export interface Sim {
   readonly pendulumState: PendulumState;
   readonly commandsCompleted: number;
   readonly commandsRejected: number;
+  readonly collision: Collision | null;
+  readonly generation: number; // bumped once per collision episode
 }
 
 export type Command =
@@ -42,8 +45,12 @@ export type Command =
   // reset's the pendulums position, and stops the sim
   | { type: "stop" }
 
-  // same as stop, separate event for better readability
-  | { type: "collision" }
+  // a collision report (self-detected or gossiped from a neighbour). always carries
+  // the full Collision record so nodes can merge toward the earliest one.
+  | { type: "collision"; collision: Collision }
+
+  // fire the scheduled restart for a given episode; fenced by status + generation
+  | { type: "restart"; generation: number }
 
   // configure the pendulum: you can configure the pendulum at any status
   | { type: "configure"; config: PendulumConfigPatch }
@@ -52,11 +59,12 @@ export type Command =
   // includes the latest snapshot of our internal map of the world state.
   // passing in world state as a snapshot, ensures our state machine is not reading a global map,
   // and makes testing easier
-  | { type: "tick"; dt: number; worldState: PendulumLocation[] };
+  | { type: "tick"; dt: number; worldState: PendulumLocation[]; now: number };
 
 export type Effect =
-  | { type: "reportCollision"; data: PendulumCollisionUpdate }
-  | { type: "reportLocation"; data: PendulumLocation };
+  | { type: "reportCollision"; data: Collision }
+  | { type: "reportLocation"; data: PendulumLocation }
+  | { type: "scheduleRestart"; at: number; generation: number };
 
 export interface Rejection {
   command: Command;
@@ -80,7 +88,33 @@ export function createSim(nodeId: NodeId): Sim {
     status: "stopped",
     commandsCompleted: 0,
     commandsRejected: 0,
+    collision: null,
+    generation: 0,
   };
+}
+
+const RESTART_MS = RUNTIME_CONFIG.restartSec * 1000;
+
+// Apply a collision from either the `collision` command or a tick-detected hit.
+// A brand-new episode (was not collided) bumps the generation — that bump is the
+// fence a stale restart from a previous episode fails to match. Within an episode
+// we only converge (merge toward the earliest report) and reschedule if it changed.
+function applyCollision(sim: Sim, c: Collision, extra: Effect[] = []): Outcome {
+  if (sim.collision === null) {
+    const generation = sim.generation + 1;
+    return ok({ ...sim, status: "collided", collision: c, generation }, [
+      ...extra,
+      { type: "scheduleRestart", at: c.timestamp + RESTART_MS, generation },
+    ]);
+  }
+  // mergeCollision returns the SAME reference when nothing changed, so
+  // reference-equality is a valid "did it change?" check → skip a pointless reschedule.
+  const merged = mergeCollision(sim.collision, c);
+  if (merged === sim.collision) return ok(sim, extra);
+  return ok({ ...sim, collision: merged }, [
+    ...extra,
+    { type: "scheduleRestart", at: merged.timestamp + RESTART_MS, generation: sim.generation },
+  ]);
 }
 
 const ok = (nextSim: Sim, effects: Effect[] = []): Outcome => ({
@@ -101,10 +135,12 @@ const reject = (nextSim: Sim, command: Command, reason: string): Outcome => ({
 export function transition(sim: Sim, command: Command): Outcome {
   switch (command.type) {
     case "start":
+      // a manual start comes back fresh: clear any collision and relaunch from config.angle
       return ok({
         ...sim,
         pendulumState: { angle: sim.config.angle, angularVelocity: 0 },
         status: "running",
+        collision: null,
       });
 
     case "pause":
@@ -113,19 +149,42 @@ export function transition(sim: Sim, command: Command): Outcome {
     case "resume":
       return sim.status === "paused" ? ok({ ...sim, status: "running" }) : reject(sim, command, "not paused");
 
-    case "collision": // same as stop
+    case "collision":
+      // valid from ANY status: it's a merge toward the earliest report, never a blind
+      // overwrite, so it's idempotent and safe to accept anywhere.
+      return applyCollision(sim, command.collision);
+
+    case "restart":
+      // fenced twice: status rejects a duplicate restart within this episode (we're
+      // already running), generation rejects a leftover timer from a previous episode.
+      if (sim.status !== "collided") return reject(sim, command, "not collided");
+      if (command.generation !== sim.generation) return reject(sim, command, "stale restart");
+      return ok({
+        ...sim,
+        status: "running",
+        collision: null,
+        pendulumState: { angle: sim.config.angle, angularVelocity: 0 },
+      });
+
     case "stop":
       // freeze in place: keep the current angle, just kill the velocity.
-      // (start relaunches from config.angle.)
+      // (start relaunches from config.angle.) clear collision so a stopped node
+      // never looks half-collided.
       return sim.status === "stopped"
         ? reject(sim, command, "already stopped")
-        : ok({ ...sim, status: "stopped", pendulumState: { ...sim.pendulumState, angularVelocity: 0 } });
+        : ok({
+            ...sim,
+            status: "stopped",
+            collision: null,
+            pendulumState: { ...sim.pendulumState, angularVelocity: 0 },
+          });
 
     case "configure": {
       const config = { ...sim.config, ...command.config };
       // changing the launch angle drops the bob from rest, so kill any velocity
       const angleChanged = command.config.angle !== undefined && command.config.angle !== sim.config.angle;
-      const pendulumState = angleChanged ? { ...sim.pendulumState, angularVelocity: 0 } : sim.pendulumState;
+      const pendulumState = angleChanged ? {  angularVelocity: 0, angle: (command.config.angle??sim.pendulumState.angle) } : sim.pendulumState;
+      // const pendulumState = angleChanged ? { ...sim.pendulumState, angularVelocity: 0, } : sim.pendulumState;
       return ok({ ...sim, config, pendulumState });
     }
 
@@ -139,19 +198,31 @@ export function transition(sim: Sim, command: Command): Outcome {
           nodeId: sim.nodeId,
           bobRadius: bobRadius(sim.config.mass),
           anchorX: sim.config.anchorX,
-          posistion: posistion(sim),
+          posistion: posistion(stepped),
         },
       };
       const hit = detectCollision(sim.nodeId, me, command.worldState);
+      if (!hit) return ok(stepped, [reportLocation]);
 
-      return hit
-        ? ok({ ...stepped, status: "restarting" }, [
-            reportLocation,
-            { type: "reportCollision", data: { reportingNode: sim.nodeId, otherNode: hit.nodeId } },
-          ])
-        : ok(stepped, [reportLocation]);
+      // a tick-detected hit always starts a new episode (stepped is running, so
+      // stepped.collision is null) — applyCollision bumps the generation for us.
+      const c: Collision = { reportingNode: sim.nodeId, with: hit.nodeId, timestamp: command.now };
+      return applyCollision(stepped, c, [reportLocation, { type: "reportCollision", data: c }]);
     }
   }
+}
+
+// keep the earlier collision (ties: lower reporting node, then lower `with`). a total
+// order over reports, so two distinct reports are never equally good. the held state
+// may be null (nothing seen yet) — then we just adopt the incoming report — but the
+// incoming report is always a real collision, so the result is never null.
+export function mergeCollision(colFromSimState: Collision | null, colFromCommand: Collision): Collision {
+  const a = colFromSimState;
+  const b = colFromCommand;
+  if (a === null) return b;
+  if (a.timestamp !== b.timestamp) return a.timestamp < b.timestamp ? a : b;
+  if (a.reportingNode !== b.reportingNode) return a.reportingNode < b.reportingNode ? a : b;
+  return a.with <= b.with ? a : b;
 }
 
 // compute the current x,y location of the bob

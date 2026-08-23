@@ -39,11 +39,11 @@ async function startServer(nodeId: NodeId) {
       const out = transition(sim, command);
       sim = out.sim;
 
-      debugSimState(iterCount, sim);
+      debugSimState(iterCount, sim, command.type);
 
       if (out.result === "ok") {
         // execute side-effects of the state machine
-        executeEffects(out.effects, sendWsMessage);
+        executeEffects(out.effects, sendWsMessage, inbox);
       }
       reply?.(out);
     }
@@ -61,7 +61,7 @@ async function startServer(nodeId: NodeId) {
     const now = performance.now();
     if (now - nextTickAt > MAX_CATCHUP_MS) nextTickAt = now; // stall guard
     while (now >= nextTickAt) {
-      inbox.push({ command: { type: "tick", dt: DT, worldState: Array.from(neighbors.values()) } });
+      inbox.push({ command: { type: "tick", dt: DT, worldState: Array.from(neighbors.values()), now: Date.now() } });
       nextTickAt += DT * 1000;
     }
   }, 1000 / RUNTIME_CONFIG.simHz);
