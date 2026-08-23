@@ -1,0 +1,37 @@
+import type { SimSnapshot } from "@pendulum/shared/src/types";
+import { type Sim, snapshot } from "./simulation";
+
+export function debugSimState(iterCount: number, sim: Sim) {
+  if (process.env.DEBUG === undefined) return;
+
+  if (iterCount % 10 === 0) {
+    console.log(formatSnapshot(snapshot(sim)));
+  }
+}
+
+// vibe coded...
+
+// A tiny gauge showing where the bob is relative to straight-down (`|`), clamped
+// to ±90°. `o` is the bob; leans left/right with the angle.
+function angleGauge(angle: number, width = 21): string {
+  const half = Math.floor(width / 2);
+  const clamped = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, angle));
+  const pos = half + Math.round((clamped / (Math.PI / 2)) * half);
+  const cells: string[] = Array.from({ length: width }, (_, i) => (i === half ? "|" : "-"));
+  cells[pos] = "o";
+  return cells.join("");
+}
+
+// Compact multi-line dump of a snapshot for stdout debugging in the main loop.
+export function formatSnapshot(snap: SimSnapshot): string {
+  const { nodeId, status, config, posistion: pos, bobRadius, commandsCompleted, commandsRejected } = snap;
+  const deg = ((config.angle * 180) / Math.PI).toFixed(0);
+  return [
+    `node ${nodeId} · ${status}`,
+    `  angle ${config.angle.toFixed(2)}rad (${deg}°) [${angleGauge(config.angle)}]`,
+    `  bob (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)})m  r ${bobRadius.toFixed(2)}m  len ${config.length}m  mass ${config.mass}kg`,
+    `  anchorX ${config.anchorX.toFixed(2)}m`,
+    `  wind ${config.wind}N  g ${config.gravity}m/s²`,
+    `  cmds ✓${commandsCompleted} ✗${commandsRejected}`,
+  ].join("\n");
+}
