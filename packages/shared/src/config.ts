@@ -12,12 +12,21 @@ interface RuntimeConfig {
 
   // how often should the gateway push position updates to the UI
   uiUpdateHz: number;
+
+  // the max radius of a bob in meters
+  maxBobR: number;
+
+  // in kg, the weight at which a bob will reach maxR
+  maxBobMass: number;
 }
 
 export const RUNTIME_CONFIG: RuntimeConfig = {
   gatewayPort: 8000,
   simStartPort: 9000,
-  simCount: 2,
-  simHz: 60,
+  simCount: 50,
+  simHz: 120,
   uiUpdateHz: 60,
+
+  maxBobR: 2,
+  maxBobMass: 100,
 };
