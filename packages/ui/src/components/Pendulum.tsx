@@ -8,6 +8,12 @@ export interface PendulumGeometry {
   r: number;
 }
 
+/** A pendulum with its stable node id and current config. */
+export interface PendulumInstance {
+  nodeId: number;
+  config: PendulumConfig;
+}
+
 /**
  * Resolve a config into world-space geometry (meters). Shared by rendering and
  * by the camera's fit-to-content logic so they always agree.

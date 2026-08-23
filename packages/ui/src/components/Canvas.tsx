@@ -1,11 +1,7 @@
-import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
-import { defaultPendulumConfig, type PendulumConfig } from "@pendulum/shared/src/types";
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { mocha } from "../theme";
-import { Pendulum, pendulumGeometry } from "./Pendulum";
-
-// Accent colors cycled across pendulums.
-const BOB_COLORS = [mocha.blue, mocha.green, mocha.peach, mocha.mauve, mocha.teal, mocha.yellow, mocha.pink, mocha.sky];
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { bobColor, mocha } from "../theme";
+import { AnchorHandle } from "./AnchorHandle";
+import { Pendulum, pendulumGeometry, type PendulumInstance } from "./Pendulum";
 
 /**
  * The camera into the conceptually-infinite world.
@@ -44,7 +40,7 @@ function ticks(lo: number, hi: number, step: number): number[] {
 }
 
 /** Camera that frames all pendulums (plus the beam at y = 0) within the viewport. */
-function fitCamera(pendulums: { config: PendulumConfig }[], size: { w: number; h: number }): Camera {
+function fitCamera(pendulums: PendulumInstance[], size: { w: number; h: number }): Camera {
   if (pendulums.length === 0) return INITIAL_CAMERA;
 
   let minX = 0;
@@ -83,8 +79,11 @@ export interface WorldPoint {
 }
 
 interface CanvasProps {
+  pendulums: PendulumInstance[];
   onViewChange?: (view: CameraView) => void;
   onCursorChange?: (cursor: WorldPoint | null) => void;
+  onOpenConfig?: (nodeId: number, e: React.MouseEvent<HTMLButtonElement>) => void;
+  onAnchorMove?: (nodeId: number, anchorX: number) => void;
 }
 
 export interface CanvasHandle {
@@ -95,7 +94,10 @@ export interface CanvasHandle {
 const clampZoom = (ppm: number) => Math.min(MAX_PX_PER_METER, Math.max(MIN_PX_PER_METER, ppm));
 
 export const Canvas = memo(
-  forwardRef<CanvasHandle, CanvasProps>(function Canvas({ onViewChange, onCursorChange }, ref) {
+  forwardRef<CanvasHandle, CanvasProps>(function Canvas(
+    { pendulums, onViewChange, onCursorChange, onOpenConfig, onAnchorMove },
+    ref,
+  ) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [size, setSize] = useState({ w: 0, h: 0 });
     const sizeRef = useRef(size);
@@ -103,26 +105,20 @@ export const Canvas = memo(
     const [camera, setCamera] = useState<Camera>(INITIAL_CAMERA);
     const cameraRef = useRef(camera);
     cameraRef.current = camera;
+    const pendulumsRef = useRef(pendulums);
+    pendulumsRef.current = pendulums;
     const dragRef = useRef<{ startX: number; startY: number; camX: number; camY: number } | null>(null);
-
-    // One pendulum per sim, keyed by node id, positioned by defaultPendulumConfig.
-    const pendulums = useMemo(
-      () =>
-        Array.from({ length: RUNTIME_CONFIG.simCount }, (_, i) => ({
-          nodeId: i,
-          config: defaultPendulumConfig(i),
-        })),
-      [],
-    );
 
     // Keep the pendulums framed until the user takes control of the camera.
     // (Re-fits across the transient sizes emitted while the layout settles, and
-    // on window resize, but stops once the user pans or zooms.)
+    // on window resize / node-count change, but stops once the user pans or zooms.
+    // Intentionally does NOT refit on config edits, so tweaking a value doesn't
+    // yank the camera around.)
     const userControlled = useRef(false);
     useEffect(() => {
       if (userControlled.current || size.w === 0 || size.h === 0) return;
-      setCamera(fitCamera(pendulums, size));
-    }, [pendulums, size]);
+      setCamera(fitCamera(pendulumsRef.current, size));
+    }, [size, pendulums.length]);
 
     // Track the container's pixel size so 1 world-meter is always square on screen.
     useEffect(() => {
@@ -233,7 +229,13 @@ export const Canvas = memo(
     return (
       <div
         ref={containerRef}
-        style={{ width: "100%", height: "100%", overflow: "hidden", cursor: dragRef.current ? "grabbing" : "grab" }}
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "100%",
+          overflow: "hidden",
+          cursor: dragRef.current ? "grabbing" : "grab",
+        }}
       >
         <svg
           role="img"
@@ -281,9 +283,27 @@ export const Canvas = memo(
 
           {/* Pendulums */}
           {pendulums.map(({ nodeId, config }) => (
-            <Pendulum key={nodeId} config={config} color={BOB_COLORS[nodeId % BOB_COLORS.length]} />
+            <Pendulum key={nodeId} config={config} color={bobColor(nodeId)} />
           ))}
         </svg>
+
+        {/* Interactive anchor handles (fixed pixel size, projected from world space).
+            The layer ignores pointer events except on the handles themselves. */}
+        <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+          {pendulums.map(({ nodeId, config }) => (
+            <AnchorHandle
+              key={nodeId}
+              nodeId={nodeId}
+              x={(config.anchorX - camera.x) * camera.pxPerMeter}
+              y={(0 - camera.y) * camera.pxPerMeter}
+              pxPerMeter={camera.pxPerMeter}
+              anchorX={config.anchorX}
+              color={bobColor(nodeId)}
+              onAnchorMove={onAnchorMove}
+              onOpenConfig={onOpenConfig}
+            />
+          ))}
+        </div>
       </div>
     );
   }),
