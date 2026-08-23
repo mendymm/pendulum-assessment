@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "npm run build && npm run start-simulation -w @pendulum/scripts",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
