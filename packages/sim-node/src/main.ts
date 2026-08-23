@@ -1,11 +1,13 @@
 import { serve } from "@hono/node-server";
-import { RUNTIME_CONFIG } from "@pendulum/shared";
+import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
+import { type NodeId, NodeIdSchema } from "@pendulum/shared/src/types";
 import { Hono } from "hono";
 import { addControlPlaneRoutes } from "./controlPlane";
+import { debugSimState } from "./debug";
 import { executeEffects } from "./execEffects";
 import { connectToGateway } from "./gatewayWsConn";
-import { type Envelope, mailbox } from "./mailbox";
-import { createSim, currentLocation, type Sim, toBobPositions, transition } from "./simulation";
+import { mailbox } from "./mailbox";
+import { createSim, transition } from "./simulation";
 
 const app = new Hono();
 
@@ -14,55 +16,36 @@ const DT = 1 / RUNTIME_CONFIG.simHz;
 
 const MAX_CATCHUP_MS = 250; // after a stall, drop the backlog instead of flooding the inbox
 
-async function startServer(nodeId: number) {
+async function startServer(nodeId: NodeId) {
   const listingPort = RUNTIME_CONFIG.simStartPort + nodeId;
   console.log(`Listing on 127.0.0.1:${listingPort}`);
 
-  const inbox = mailbox<Envelope>();
+  const inbox = mailbox();
+  let sim = createSim(nodeId);
 
-  addControlPlaneRoutes(app, inbox);
+  addControlPlaneRoutes(app, inbox, () => sim);
   serve({ fetch: app.fetch, hostname: "127.0.0.1", port: listingPort });
 
   const { neighbors, sendWsMessage } = connectToGateway(nodeId, inbox);
 
-  let sim: Sim | undefined; // undefined until configured (via HTTP /start, a later step)
-
   // the only writer of `sim` during operation
   const consume = async () => {
-    let ticks = 0; // TEMP: for the throttled log below
+    let iterCount = 0;
     while (true) {
+      iterCount++;
       const { command, reply } = await inbox.recv();
-
-      console.log(command);
-      if (!sim) {
-        // no sim yet, ignore all messages, and keep the mailbox empty
-        continue;
-      }
 
       // transition the state machine 1 step
       const out = transition(sim, command);
+      sim = out.sim;
+
+      debugSimState(iterCount, sim);
 
       if (out.result === "ok") {
-        // next time we call transition, we will use an updated sim
-        sim = out.sim;
         // execute side-effects of the state machine
         executeEffects(out.effects, sendWsMessage);
       }
       reply?.(out);
-
-      // TEMP: prove the loop is advancing physics. Remove when snapshots exist.
-      if (command.type === "tick" && ++ticks % 20 === 0) {
-        console.log(`[node ${nodeId}] angle=${sim.pendulumState.angle.toFixed(3)}`);
-      }
-
-      // send location
-      sendWsMessage({
-        type: "PendulumLocationUpdate",
-        data: {
-          nodeId,
-          ...currentLocation(sim),
-        },
-      });
     }
   };
 
@@ -78,26 +61,13 @@ async function startServer(nodeId: number) {
     const now = performance.now();
     if (now - nextTickAt > MAX_CATCHUP_MS) nextTickAt = now; // stall guard
     while (now >= nextTickAt) {
-      inbox.push({ command: { type: "tick", dt: DT, worldState: toBobPositions(neighbors) } });
+      inbox.push({ command: { type: "tick", dt: DT, worldState: Array.from(neighbors.values()) } });
       nextTickAt += DT * 1000;
     }
   }, 1000 / RUNTIME_CONFIG.simHz);
 
-  // TEMP: seed + start a sim so the loop has something to advance.
-  // Replaced by POST /start (which supplies the config) in the HTTP step.
-  const seed =
-    nodeId === 1
-      ? { angle: 1.0, mass: 1, length: 1, anchor: { x: 0.4 } } // collides with node 0 @ ~3.5s
-      : { angle: 0.4, mass: 1, length: 1, anchor: { x: nodeId } }; // regular spawn, spaced by id
-  sim = createSim(nodeId, seed);
-
-  inbox.push({ command: { type: "start" } });
-
   consume();
 }
 
-const nodeId = Number(process.argv[2]);
-if (Number.isNaN(nodeId)) {
-  throw new Error(`expected number as the nodeId, got: ${process.argv[2]}`);
-}
+const nodeId = NodeIdSchema.parse(Number(process.argv[2]));
 startServer(nodeId);
