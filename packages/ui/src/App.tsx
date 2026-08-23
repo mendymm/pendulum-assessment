@@ -39,7 +39,17 @@ export function App() {
   // Live bob positions streamed from the gateway (keyed by nodeId); drives the
   // canvas so running pendulums actually swing.
   const [locations, setLocations] = useState<Map<number, PendulumLocation>>(() => new Map());
-  useEffect(() => subscribeLocations(setLocations), []);
+  // Pending auto-restart deadlines (nodeId -> epoch ms) for collided bobs; drives the
+  // per-bob countdown. Empty whenever nothing is mid-collision.
+  const [restarts, setRestarts] = useState<Map<number, number>>(() => new Map());
+  useEffect(
+    () =>
+      subscribeLocations((frame) => {
+        setLocations(frame.locations);
+        setRestarts(frame.restarts);
+      }),
+    [],
+  );
 
   const selectedConfig = selected ? pendulums.find((p) => p.nodeId === selected.nodeId)?.config : undefined;
 
@@ -217,6 +227,7 @@ export function App() {
           ref={canvasRef}
           pendulums={pendulums}
           locations={locations}
+          restarts={restarts}
           onViewChange={setView}
           onCursorChange={setCursor}
           onOpenConfig={openFromAnchor}

@@ -37,7 +37,7 @@ export const PendulumConfigSchema = PendulumConfigShape;
 // all optional, used in the patch request
 export const PendulumConfigPatchSchema = PendulumConfigShape.partial();
 
-export const SimStatusSchema = z.enum(["running", "paused", "stopped", "restarting", "countdown"]);
+export const SimStatusSchema = z.enum(["running", "paused", "stopped", "restarting", "countdown", "collided"]);
 
 export const PointSchema = z.object({
   x: z.number(),
@@ -52,6 +52,13 @@ export const SimSnapshotSchema = z.object({
   bobRadius: BobRadiusSchema,
   commandsCompleted: z.number(),
   commandsRejected: z.number(),
+  generation: z.number(),
+});
+
+export const CollisionSchema = z.object({
+  reportingNode: NodeIdSchema,
+  with: NodeIdSchema,
+  timestamp: z.number(),
 });
 
 // websocket message types
@@ -63,16 +70,9 @@ export const PendulumLocationSchema = z.object({
   anchorX: z.number(),
 });
 
-export const PendulumCollisionUpdateSchema = z.object({
-  // the node who detected the collision, and sent the broadcast
-  reportingNode: z.number(),
-  // the node who was involved in the collision
-  otherNode: z.number(),
-});
-
 export const WsEnvelopeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("PendulumLocationUpdate"), data: PendulumLocationSchema }),
-  z.object({ type: z.literal("PendulumCollisionUpdate"), data: PendulumCollisionUpdateSchema }),
+  z.object({ type: z.literal("PendulumCollisionUpdate"), data: CollisionSchema }),
 ]);
 
 export type BobRadius = z.infer<typeof BobRadiusSchema>;
@@ -87,15 +87,15 @@ export type NodeId = z.infer<typeof NodeIdSchema>;
 export type SimStatus = z.infer<typeof SimStatusSchema>;
 export type SimSnapshot = z.infer<typeof SimSnapshotSchema>;
 export type WsEnvelope = z.infer<typeof WsEnvelopeSchema>;
-export type PendulumCollisionUpdate = z.infer<typeof PendulumCollisionUpdateSchema>;
 export type PendulumLocation = z.infer<typeof PendulumLocationSchema>;
+export type Collision = z.infer<typeof CollisionSchema>;
 
 export function defaultPendulumConfig(nodeId: number): PendulumConfig {
   return PendulumConfigSchema.parse({
-    angle: 0,
-    length: 1.5,
+    angle: 0.7,
+    length: 3.5,
     mass: 5,
-    anchorX: nodeId,
+    anchorX: nodeId * 5,
     wind: 0,
     gravity: 9.81,
   });
@@ -104,14 +104,21 @@ export function defaultPendulumConfig(nodeId: number): PendulumConfig {
 // uniform sample in [min, max)
 const between = (min: number, max: number) => min + Math.random() * (max - min);
 
-export function randomPendulumConfig(): PendulumConfig {
+// spacing between adjacent nodes' default anchors (matches defaultPendulumConfig)
+const NODE_SPACING = 5;
+
+// Randomize within *sensible* ranges so pendulums stay visible and behave: no
+// hair-thin strings, no absurd masses, gravity near Earth-ish, gentle wind. The
+// anchor jitters around this node's slot (nodeId * NODE_SPACING) so nodes stay
+// roughly in place rather than scattering across the plane.
+export function randomPendulumConfig(nodeId: number): PendulumConfig {
   return PendulumConfigSchema.parse({
-    angle: between(-Math.PI, Math.PI), // AngleSchema: [-π, π]
-    mass: between(0.1, 100), // MassSchema: positive
-    length: between(0.1, 7), // LengthSchema: positive, ≤ 7
-    anchorX: between(-50, 50), // unbounded number
-    wind: between(-10, 10), // unbounded number
-    gravity: between(0, 20), // GravitySchema: non-negative
+    angle: between(-Math.PI / 2, Math.PI / 2), // drop angle within ±90° of vertical
+    mass: between(2, 20), // kg — a plausible, well-sized bob
+    length: between(1.5, 5), // m — LengthSchema caps at 7
+    anchorX: nodeId * NODE_SPACING + between(-1.5, 1.5), // jitter around this node's slot
+    wind: between(-3, 3), // gentle sideways force
+    gravity: between(8, 12), // m/s² — Earth-ish
   });
 }
 

@@ -28,7 +28,11 @@ const INITIAL_CAMERA: Camera = { x: -1, y: -0.5, pxPerMeter: 200 };
 const MIN_PX_PER_METER = 1;
 const MAX_PX_PER_METER = 5000;
 const MIN_GRID_GAP_PX = 30; // don't draw grid lines closer than this on screen
-const FIT_PADDING = 0.15; // fraction of extra space around content when fitting
+// The default framing, independent of how many pendulums exist: roughly what a
+// 5-pendulum default layout occupies (anchors at x = 0,5,…,20; strings ~3.5 m).
+// More or fewer pendulums no longer change the initial zoom — the user pans/zooms
+// from here. World is SVG y-down, so `top` < `bottom`.
+const DEFAULT_VIEW = { left: -3, right: 25, top: -5, bottom: 8 };
 
 /** Pick a "nice" world-space grid step (1/2/5 × 10ⁿ meters) so lines stay legible at any zoom. */
 function niceStep(pxPerMeter: number): number {
@@ -47,26 +51,12 @@ function ticks(lo: number, hi: number, step: number): number[] {
   return out;
 }
 
-/** Camera that frames all pendulums (plus the beam at y = 0) within the viewport. */
-function fitCamera(pendulums: PendulumInstance[], size: { w: number; h: number }): Camera {
-  if (pendulums.length === 0) return INITIAL_CAMERA;
-
-  let minX = 0;
-  let maxX = 0;
-  let minY = 0; // include the beam at y = 0
-  let maxY = 0;
-  for (const { config } of pendulums) {
-    const { anchorX, bobX, bobY, r } = pendulumGeometry(config);
-    minX = Math.min(minX, anchorX, bobX - r);
-    maxX = Math.max(maxX, anchorX, bobX + r);
-    minY = Math.min(minY, bobY - r);
-    maxY = Math.max(maxY, bobY + r);
-  }
-
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  const worldW = (maxX - minX || 1) * (1 + 2 * FIT_PADDING);
-  const worldH = (maxY - minY || 1) * (1 + 2 * FIT_PADDING);
+/** Camera that frames the fixed DEFAULT_VIEW rectangle within the viewport (letterboxed). */
+function fitCamera(size: { w: number; h: number }): Camera {
+  const worldW = DEFAULT_VIEW.right - DEFAULT_VIEW.left;
+  const worldH = DEFAULT_VIEW.bottom - DEFAULT_VIEW.top;
+  const cx = (DEFAULT_VIEW.left + DEFAULT_VIEW.right) / 2;
+  const cy = (DEFAULT_VIEW.top + DEFAULT_VIEW.bottom) / 2;
   const pxPerMeter = clampZoom(Math.min(size.w / worldW, size.h / worldH));
 
   return {
@@ -91,6 +81,9 @@ interface CanvasProps {
   // Live bob positions from the gateway feed, keyed by nodeId. A node present here
   // renders at its swinging position; absent nodes fall back to config geometry.
   locations?: Map<number, PendulumLocation>;
+  // Pending auto-restart deadlines (nodeId -> epoch ms) for collided bobs; each renders
+  // a live countdown on the bob until the deadline passes.
+  restarts?: Map<number, number>;
   onViewChange?: (view: CameraView) => void;
   onCursorChange?: (cursor: WorldPoint | null) => void;
   onOpenConfig?: (nodeId: number, e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -112,6 +105,7 @@ export const Canvas = memo(
     {
       pendulums,
       locations,
+      restarts,
       onViewChange,
       onCursorChange,
       onOpenConfig,
@@ -129,20 +123,39 @@ export const Canvas = memo(
     const [camera, setCamera] = useState<Camera>(INITIAL_CAMERA);
     const cameraRef = useRef(camera);
     cameraRef.current = camera;
-    const pendulumsRef = useRef(pendulums);
-    pendulumsRef.current = pendulums;
     const dragRef = useRef<{ startX: number; startY: number; camX: number; camY: number } | null>(null);
 
-    // Keep the pendulums framed until the user takes control of the camera.
-    // (Re-fits across the transient sizes emitted while the layout settles, and
-    // on window resize / node-count change, but stops once the user pans or zooms.
-    // Intentionally does NOT refit on config edits, so tweaking a value doesn't
-    // yank the camera around.)
+    // Wall-clock used to compute the live countdown. While a countdown is running we
+    // re-render every animation frame, because the gateway feed goes quiet once nothing
+    // is moving (paused / all collided) — so the ticking has to be driven client-side.
+    const [now, setNow] = useState(() => Date.now());
+    // Global restart countdown: the soonest pending restart across all bobs. When any
+    // bob is mid-collision, every bob counts down to this same deadline; when none are,
+    // it's undefined and no rings render.
+    const globalRestartAt = restarts && restarts.size > 0 ? Math.min(...restarts.values()) : undefined;
+    const countdownMs = globalRestartAt !== undefined ? globalRestartAt - now : undefined;
+    const hasCountdown = globalRestartAt !== undefined;
+    useEffect(() => {
+      if (!hasCountdown) return;
+      let raf = 0;
+      const tick = () => {
+        setNow(Date.now());
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(raf);
+    }, [hasCountdown]);
+
+    // Frame the fixed DEFAULT_VIEW until the user takes control of the camera.
+    // (Re-fits across the transient sizes emitted while the layout settles and on
+    // window resize, but stops once the user pans or zooms. The framing no longer
+    // depends on the pendulum count — more/fewer pendulums keep the same default
+    // zoom, and the user pans/zooms from there.)
     const userControlled = useRef(false);
     useEffect(() => {
       if (userControlled.current || size.w === 0 || size.h === 0) return;
-      setCamera(fitCamera(pendulumsRef.current, size));
-    }, [size, pendulums.length]);
+      setCamera(fitCamera(size));
+    }, [size]);
 
     // Track the container's pixel size so 1 world-meter is always square on screen.
     useEffect(() => {
@@ -314,13 +327,15 @@ export const Canvas = memo(
 
           {/* Pendulums: solid bob at the live position, plus a faint ghost at the
               launch (drop) angle whenever the sim is reporting a live position —
-              so you can see where a running bob will relaunch from. */}
+              so you can see where a running bob will relaunch from.
+              The restart countdown is global: as soon as any bob is mid-collision,
+              every bob shows the same synchronized countdown (to the soonest restart). */}
           {pendulums.map((p) => (
             <Fragment key={p.nodeId}>
               {locations?.has(p.nodeId) && (
                 <Pendulum geometry={pendulumGeometry(p.config)} color={bobColor(p.nodeId)} ghost />
               )}
-              <Pendulum geometry={liveGeomFor(p)} color={bobColor(p.nodeId)} />
+              <Pendulum geometry={liveGeomFor(p)} color={bobColor(p.nodeId)} countdownMs={countdownMs} />
             </Fragment>
           ))}
         </svg>

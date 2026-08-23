@@ -18,15 +18,20 @@ interface RuntimeConfig {
 
   // in kg, the weight at which a bob will reach maxR
   maxBobMass: number;
+
+  // seconds a collided node waits before restarting its episode
+  restartSec: number;
 }
 
 export const RUNTIME_CONFIG: RuntimeConfig = {
   gatewayPort: 8000,
   simStartPort: 9000,
-  simCount: 50,
+  simCount: 5,
   simHz: 120,
   uiUpdateHz: 60,
 
   maxBobR: 2,
   maxBobMass: 100,
+
+  restartSec: 5, // the spec's 5-second wait
 };

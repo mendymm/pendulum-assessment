@@ -70,10 +70,10 @@ export function addControlRoutes(app: Hono) {
 
   // todo: maybe get rid of this? and just have this in the UI?
   app.post("/api/randomize", async (c) => {
-    const results = await broadcast("/configure", () => ({
+    const results = await broadcast("/configure", (nodeId) => ({
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(randomPendulumConfig()),
+      body: JSON.stringify(randomPendulumConfig(nodeId)),
     }));
     return c.json(results);
   });

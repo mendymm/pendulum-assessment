@@ -74,13 +74,23 @@ export async function configureNode(nodeId: number, patch: PendulumConfigPatch):
 }
 
 /**
- * Subscribe to the gateway's live position feed (`/api/ui_updates`). The gateway
- * pushes the full nodeId -> location map at `uiUpdateHz`; each frame we parse it
- * into a `Map<number, PendulumLocation>` (dropping any entries that don't validate)
- * and hand it to `onUpdate`. The socket auto-reconnects if the gateway bounces.
- * Returns an unsubscribe function that stops reconnecting and closes the socket.
+ * A single frame from the gateway's live feed: where every bob is, plus the pending
+ * auto-restart deadline (epoch ms) for any bob currently collided.
  */
-export function subscribeLocations(onUpdate: (locations: Map<number, PendulumLocation>) => void): () => void {
+export interface FeedFrame {
+  locations: Map<number, PendulumLocation>;
+  // nodeId -> wall-clock ms at which the collided node auto-restarts; the UI counts down to it.
+  restarts: Map<number, number>;
+}
+
+/**
+ * Subscribe to the gateway's live feed (`/api/ui_updates`). The gateway pushes a
+ * `{ locations, restarts }` frame whenever the world changes; each frame we parse it
+ * into `Map`s (dropping any entries that don't validate) and hand it to `onUpdate`.
+ * The socket auto-reconnects if the gateway bounces. Returns an unsubscribe function
+ * that stops reconnecting and closes the socket.
+ */
+export function subscribeLocations(onUpdate: (frame: FeedFrame) => void): () => void {
   let closed = false;
   let socket: WebSocket | null = null;
   let reconnect: ReturnType<typeof setTimeout> | undefined;
@@ -97,13 +107,28 @@ export function subscribeLocations(onUpdate: (locations: Map<number, PendulumLoc
       } catch {
         return;
       }
-      if (typeof raw !== "object" || raw === null) return;
+      if (typeof raw !== "object" || raw === null || !("locations" in raw)) return;
+      const { locations: rawLocations, restarts: rawRestarts } = raw as {
+        locations: unknown;
+        restarts?: unknown;
+      };
+
       const locations = new Map<number, PendulumLocation>();
-      for (const [id, loc] of Object.entries(raw)) {
-        const parsed = PendulumLocationSchema.safeParse(loc);
-        if (parsed.success) locations.set(Number(id), parsed.data);
+      if (typeof rawLocations === "object" && rawLocations !== null) {
+        for (const [id, loc] of Object.entries(rawLocations)) {
+          const parsed = PendulumLocationSchema.safeParse(loc);
+          if (parsed.success) locations.set(Number(id), parsed.data);
+        }
       }
-      onUpdate(locations);
+
+      const restarts = new Map<number, number>();
+      if (typeof rawRestarts === "object" && rawRestarts !== null) {
+        for (const [id, at] of Object.entries(rawRestarts)) {
+          if (typeof at === "number") restarts.set(Number(id), at);
+        }
+      }
+
+      onUpdate({ locations, restarts });
     };
 
     // The gateway (or a node) may bounce; keep retrying until we're unsubscribed.

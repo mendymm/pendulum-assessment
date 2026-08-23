@@ -6,7 +6,7 @@ import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import { addControlRoutes } from "./api";
-import { pendulumLocations, simWsHandler } from "./wsHandler";
+import { lastWorldChangeAt, pendulumLocations, pendulumRestarts, simWsHandler } from "./wsHandler";
 
 const app = new Hono();
 
@@ -19,11 +19,25 @@ app.get(
   "/api/ui_updates",
   upgradeWebSocket(() => {
     let timer: ReturnType<typeof setInterval>;
+    // wall-clock (ms) of the last frame we pushed to this UI client.
+    let lastFrameSentAt = 0;
 
     return {
       onOpen: (_evt, ws) => {
         timer = setInterval(() => {
-          ws.send(JSON.stringify(Object.fromEntries(pendulumLocations)));
+          // Only push when the world actually changed (a new location, or a collision
+          // countdown appearing/clearing) since our last send. While the sim is paused
+          // or every pendulum has collided, nothing changes, so we go quiet instead of
+          // spamming the UI with the same frame at uiUpdateHz. The UI animates a pending
+          // countdown itself from the restart deadline, so it stays live without us.
+          if (lastWorldChangeAt <= lastFrameSentAt) return;
+          ws.send(
+            JSON.stringify({
+              locations: Object.fromEntries(pendulumLocations),
+              restarts: Object.fromEntries(pendulumRestarts),
+            }),
+          );
+          lastFrameSentAt = Date.now();
         }, 1000 / RUNTIME_CONFIG.uiUpdateHz);
       },
       onClose: () => clearInterval(timer),
