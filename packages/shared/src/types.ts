@@ -132,4 +132,3 @@ export function parseWsEnvelope(raw: string): WsEnvelope | null {
   const result = WsEnvelopeSchema.safeParse(json);
   return result.success ? result.data : null;
 }
-

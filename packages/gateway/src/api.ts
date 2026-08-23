@@ -1,6 +1,6 @@
+import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
+import { type NodeId, randomPendulumConfig } from "@pendulum/shared/src/types";
 import type { Context, Hono } from "hono";
-import {RUNTIME_CONFIG} from "@pendulum/shared/src/config"
-import {NodeId, randomPendulumConfig} from "@pendulum/shared/src/types"
 
 const nodeBase = (nodeId: number) => `http://127.0.0.1:${RUNTIME_CONFIG.simStartPort + nodeId}`;
 
@@ -26,7 +26,6 @@ async function broadcast(path: string, initFor: (nodeId: number) => RequestInit)
   const results = await Promise.all(calls);
   return Object.fromEntries(results.map((r, nodeId) => [nodeId, r])) as BroadcastResult;
 }
-
 
 // proxy the incoming request through to a single node's control plane
 async function proxyToNode(c: Context): Promise<Response> {
