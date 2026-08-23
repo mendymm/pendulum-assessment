@@ -1,4 +1,4 @@
-import type { Environment, PendulumConfig } from "@pendulum/shared";
+import type { PendulumConfig, PendulumLocation, Point } from "@pendulum/shared/src/types";
 
 export type PendulumState = {
   // radians from vertical, 0 = hanging straight down
@@ -7,28 +7,27 @@ export type PendulumState = {
   angularVelocity: number;
 };
 
-export function initilizePendulumState(config: PendulumConfig): PendulumState {
-  return {
-    angle: config.angle,
-    angularVelocity: 0,
-  };
+// returns the first neighbor whose bob overlaps ours, returns undefined when nothing is close enough.
+export function detectCollision(
+  selfNodeId: number,
+  me: { posistion: Point; bobRadius: number },
+  neighbors: PendulumLocation[],
+): PendulumLocation | undefined {
+  return neighbors.find(
+    (p) =>
+      p.nodeId !== selfNodeId &&
+      Math.hypot(p.posistion.x - me.posistion.x, p.posistion.y - me.posistion.y) < me.bobRadius + p.bobRadius,
+  );
 }
 
-export function step(
-  state: PendulumState,
-  config: PendulumConfig,
-  environment: Environment,
-  dt: number,
-): PendulumState {
-  const { length: L, mass: m } = config;
-  const { gravity: g, wind, damping } = environment;
+export function step(state: PendulumState, config: PendulumConfig, dt: number): PendulumState {
+  const { length: L, mass: m, gravity: g, wind } = config;
 
-  // three torques, as angular accelerations, summed
+  // two torques, as angular accelerations, summed
   const gravityAccel = -(g / L) * Math.sin(state.angle);
   const windAccel = (wind * Math.cos(state.angle)) / (m * L);
-  const dampingAccel = -damping * state.angularVelocity;
 
-  const angularAcceleration = gravityAccel + windAccel + dampingAccel;
+  const angularAcceleration = gravityAccel + windAccel;
 
   // semi-implicit (symplectic) Euler: velocity first, then position uses the NEW velocity
   const angularVelocity = state.angularVelocity + angularAcceleration * dt;
