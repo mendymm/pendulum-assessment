@@ -29,6 +29,15 @@ export const mocha = {
 } as const;
 
 // Accent colors cycled across pendulums, by node id.
-export const BOB_COLORS = [mocha.blue, mocha.green, mocha.peach, mocha.mauve, mocha.teal, mocha.yellow, mocha.pink, mocha.sky];
+export const BOB_COLORS = [
+  mocha.blue,
+  mocha.green,
+  mocha.peach,
+  mocha.mauve,
+  mocha.teal,
+  mocha.yellow,
+  mocha.pink,
+  mocha.sky,
+];
 
 export const bobColor = (nodeId: number) => BOB_COLORS[nodeId % BOB_COLORS.length];

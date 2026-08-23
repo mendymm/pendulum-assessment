@@ -1,6 +1,15 @@
 import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
-import { defaultPendulumConfig, type PendulumConfig, PendulumConfigSchema } from "@pendulum/shared/src/types";
-import { useRef, useState } from "react";
+import {
+  defaultPendulumConfig,
+  type PendulumConfig,
+  type PendulumLocation,
+  PendulumConfigPatchSchema,
+  PendulumConfigSchema,
+  type SimSnapshot,
+} from "@pendulum/shared/src/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { configureNode, controlAll, fetchAllSnapshots, randomizeAll, subscribeLocations } from "./api";
+import type { BobPose } from "./components/BobHandle";
 import { type CameraView, Canvas, type CanvasHandle, type WorldPoint } from "./components/Canvas";
 import { ConfigBox } from "./components/ConfigBox";
 import { NodeGrid } from "./components/NodeGrid";
@@ -27,7 +36,35 @@ export function App() {
   );
   const [selected, setSelected] = useState<Selection | null>(null);
 
+  // Live bob positions streamed from the gateway (keyed by nodeId); drives the
+  // canvas so running pendulums actually swing.
+  const [locations, setLocations] = useState<Map<number, PendulumLocation>>(() => new Map());
+  useEffect(() => subscribeLocations(setLocations), []);
+
   const selectedConfig = selected ? pendulums.find((p) => p.nodeId === selected.nodeId)?.config : undefined;
+
+  // Merge a batch of snapshots into local config; nodes not present keep theirs.
+  const applySnapshots = useCallback((snapshots: Map<number, SimSnapshot>) => {
+    setPendulums((prev) =>
+      prev.map((p) => {
+        const snap = snapshots.get(p.nodeId);
+        return snap ? { ...p, config: snap.config } : p;
+      }),
+    );
+  }, []);
+
+  // On load, pull every node's real config in one broadcast request so the UI
+  // reflects the live sims rather than our local defaults. Nodes that don't answer
+  // keep their default config.
+  useEffect(() => {
+    let cancelled = false;
+    fetchAllSnapshots().then((snapshots) => {
+      if (!cancelled) applySnapshots(snapshots);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [applySnapshots]);
 
   const selectNode = (nodeId: number, e: React.MouseEvent<HTMLButtonElement>, placement: "above" | "below") => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -42,16 +79,68 @@ export function App() {
   const updateConfig = (nodeId: number, config: PendulumConfig) =>
     setPendulums((prev) => prev.map((p) => (p.nodeId === nodeId ? { ...p, config } : p)));
 
-  const moveAnchor = (nodeId: number, anchorX: number) =>
+  // Canvas edits (anchor drag, bob drag) follow the same two-phase shape: update
+  // locally on every pointermove so the handle/ghost tracks the pointer, then
+  // commit to the gateway once, on release — sending only the fields that changed.
+  type ConfigEdit = { anchorX?: number; angle?: number; length?: number };
+
+  // Live drag: local only, no gateway write.
+  const editLocal = (nodeId: number, patch: ConfigEdit) =>
     setPendulums((prev) =>
-      prev.map((p) => (p.nodeId === nodeId ? { ...p, config: PendulumConfigSchema.parse({ ...p.config, anchorX }) } : p)),
+      prev.map((p) => (p.nodeId === nodeId ? { ...p, config: PendulumConfigSchema.parse({ ...p.config, ...patch }) } : p)),
     );
 
-  // The bob drop sets the initial (drop) angle.
-  const dropBob = (nodeId: number, angle: number) =>
-    setPendulums((prev) =>
-      prev.map((p) => (p.nodeId === nodeId ? { ...p, config: PendulumConfigSchema.parse({ ...p.config, angle }) } : p)),
-    );
+  // Release: commit locally and push just the fields that changed.
+  const commitEdit = (nodeId: number, patch: ConfigEdit) => {
+    editLocal(nodeId, patch);
+    configureNode(nodeId, PendulumConfigPatchSchema.parse(patch));
+  };
+
+  const moveAnchor = (nodeId: number, anchorX: number) => editLocal(nodeId, { anchorX });
+  const dropAnchor = (nodeId: number, anchorX: number) => commitEdit(nodeId, { anchorX });
+
+  // Dragging a bob sets its drop pose — launch angle + string length. The live bob
+  // keeps swinging, a faint ghost shows the chosen pose, and it takes effect on the
+  // next Start (angle) / immediately (length, since the sim's physics use it).
+  const dragBob = (nodeId: number, pose: BobPose) => editLocal(nodeId, pose);
+  const dropBob = (nodeId: number, pose: BobPose) => commitEdit(nodeId, pose);
+
+  // Global sim controls, fanned out to every node via the gateway broadcast routes.
+  // `paused` is a UI-level toggle: the button/space bar flip between pause & resume.
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+
+  const startAll = () => {
+    controlAll("start");
+    setPaused(false);
+  };
+  const stopAll = () => {
+    controlAll("stop");
+    setPaused(false);
+  };
+  const togglePause = useCallback(() => {
+    const next = !pausedRef.current;
+    setPaused(next);
+    controlAll(next ? "pause" : "resume");
+  }, []);
+  const randomize = async () => {
+    await randomizeAll();
+    applySnapshots(await fetchAllSnapshots()); // re-sync configs the gateway just changed
+  };
+
+  // Space toggles global pause/resume, except while typing in a form field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      togglePause();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [togglePause]);
 
   return (
     <div
@@ -86,10 +175,18 @@ export function App() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: "0 0 auto" }}>
-          {/* Zoom controls */}
-          <div style={{ display: "flex", gap: "0.35rem" }}>
-            <ZoomButton label="−" onClick={() => canvasRef.current?.zoomBy(1 / ZOOM_STEP)} />
+          {/* Zoom controls, stacked vertically */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
             <ZoomButton label="+" onClick={() => canvasRef.current?.zoomBy(ZOOM_STEP)} />
+            <ZoomButton label="−" onClick={() => canvasRef.current?.zoomBy(1 / ZOOM_STEP)} />
+          </div>
+
+          {/* Global sim controls (2×2 grid) */}
+          <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "0.35rem" }}>
+            <ControlButton label={paused ? "Resume" : "Pause"} onClick={togglePause} />
+            <ControlButton label="Randomize" onClick={randomize} />
+            <ControlButton label="Start" onClick={startAll} />
+            <ControlButton label="Stop" onClick={stopAll} />
           </div>
 
           {/* Debug: where the viewport is centered on the infinite plane */}
@@ -119,10 +216,13 @@ export function App() {
         <Canvas
           ref={canvasRef}
           pendulums={pendulums}
+          locations={locations}
           onViewChange={setView}
           onCursorChange={setCursor}
           onOpenConfig={openFromAnchor}
           onAnchorMove={moveAnchor}
+          onAnchorDrop={dropAnchor}
+          onBobDrag={dragBob}
           onBobDrop={dropBob}
         />
       </main>
@@ -177,6 +277,30 @@ function ZoomButton({ label, onClick }: { label: string; onClick: () => void }) 
         height: 32,
         fontSize: "1.2rem",
         lineHeight: 1,
+        color: mocha.text,
+        background: mocha.surface0,
+        border: `1px solid ${mocha.surface1}`,
+        borderRadius: 6,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** A global sim-control button (start/stop/pause/randomize) sized for the top-bar grid. */
+function ControlButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        minWidth: 84,
+        height: 32,
+        padding: "0 0.6rem",
+        fontSize: "0.8rem",
+        fontWeight: 500,
         color: mocha.text,
         background: mocha.surface0,
         border: `1px solid ${mocha.surface1}`,

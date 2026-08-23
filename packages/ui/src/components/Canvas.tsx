@@ -1,8 +1,15 @@
+import type { PendulumLocation } from "@pendulum/shared/src/types";
 import { Fragment, forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { bobColor, mocha } from "../theme";
 import { AnchorHandle } from "./AnchorHandle";
-import { BobHandle } from "./BobHandle";
-import { Pendulum, pendulumGeometry, type PendulumInstance } from "./Pendulum";
+import { type BobPose, BobHandle } from "./BobHandle";
+import {
+  locationGeometry,
+  Pendulum,
+  type PendulumGeometry,
+  pendulumGeometry,
+  type PendulumInstance,
+} from "./Pendulum";
 
 /**
  * The camera into the conceptually-infinite world.
@@ -81,11 +88,16 @@ export interface WorldPoint {
 
 interface CanvasProps {
   pendulums: PendulumInstance[];
+  // Live bob positions from the gateway feed, keyed by nodeId. A node present here
+  // renders at its swinging position; absent nodes fall back to config geometry.
+  locations?: Map<number, PendulumLocation>;
   onViewChange?: (view: CameraView) => void;
   onCursorChange?: (cursor: WorldPoint | null) => void;
   onOpenConfig?: (nodeId: number, e: React.MouseEvent<HTMLButtonElement>) => void;
   onAnchorMove?: (nodeId: number, anchorX: number) => void;
-  onBobDrop?: (nodeId: number, angle: number) => void;
+  onAnchorDrop?: (nodeId: number, anchorX: number) => void;
+  onBobDrag?: (nodeId: number, pose: BobPose) => void;
+  onBobDrop?: (nodeId: number, pose: BobPose) => void;
 }
 
 export interface CanvasHandle {
@@ -97,7 +109,17 @@ const clampZoom = (ppm: number) => Math.min(MAX_PX_PER_METER, Math.max(MIN_PX_PE
 
 export const Canvas = memo(
   forwardRef<CanvasHandle, CanvasProps>(function Canvas(
-    { pendulums, onViewChange, onCursorChange, onOpenConfig, onAnchorMove, onBobDrop },
+    {
+      pendulums,
+      locations,
+      onViewChange,
+      onCursorChange,
+      onOpenConfig,
+      onAnchorMove,
+      onAnchorDrop,
+      onBobDrag,
+      onBobDrop,
+    },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -228,6 +250,13 @@ export const Canvas = memo(
     const xLines = ticks(left, right, step);
     const yLines = ticks(top, bottom, step);
 
+    // The solid bob renders at the live swinging position when the gateway has one
+    // for this node; otherwise it sits at the config (drop) pose.
+    const liveGeomFor = (p: PendulumInstance): PendulumGeometry => {
+      const loc = locations?.get(p.nodeId);
+      return loc ? locationGeometry(loc) : pendulumGeometry(p.config);
+    };
+
     return (
       <div
         ref={containerRef}
@@ -283,17 +312,27 @@ export const Canvas = memo(
             vectorEffect="non-scaling-stroke"
           />
 
-          {/* Pendulums */}
-          {pendulums.map(({ nodeId, config }) => (
-            <Pendulum key={nodeId} config={config} color={bobColor(nodeId)} />
+          {/* Pendulums: solid bob at the live position, plus a faint ghost at the
+              launch (drop) angle whenever the sim is reporting a live position —
+              so you can see where a running bob will relaunch from. */}
+          {pendulums.map((p) => (
+            <Fragment key={p.nodeId}>
+              {locations?.has(p.nodeId) && (
+                <Pendulum geometry={pendulumGeometry(p.config)} color={bobColor(p.nodeId)} ghost />
+              )}
+              <Pendulum geometry={liveGeomFor(p)} color={bobColor(p.nodeId)} />
+            </Fragment>
           ))}
         </svg>
 
         {/* Interactive handles (fixed pixel size, projected from world space).
             The layer ignores pointer events except on the handles themselves. */}
         <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
-          {pendulums.map(({ nodeId, config }) => {
-            const g = pendulumGeometry(config);
+          {pendulums.map((p) => {
+            const { nodeId } = p;
+            // Handles operate on the config (drop) pose: the anchor sits on the
+            // beam, and the bob handle rides the stationary launch-angle ghost.
+            const g = pendulumGeometry(p.config);
             return (
               <Fragment key={nodeId}>
                 <AnchorHandle
@@ -304,6 +343,7 @@ export const Canvas = memo(
                   anchorX={g.anchorX}
                   color={bobColor(nodeId)}
                   onAnchorMove={onAnchorMove}
+                  onAnchorDrop={onAnchorDrop}
                   onOpenConfig={onOpenConfig}
                 />
                 <BobHandle
@@ -314,6 +354,7 @@ export const Canvas = memo(
                   anchorX={g.anchorX}
                   camera={camera}
                   containerRef={containerRef}
+                  onDrag={onBobDrag}
                   onDrop={onBobDrop}
                 />
               </Fragment>

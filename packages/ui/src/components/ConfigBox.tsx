@@ -1,6 +1,11 @@
-import { type PendulumConfig, PendulumConfigSchema } from "@pendulum/shared/src/types";
+import { type PendulumConfig, PendulumConfigSchema, randomPendulumConfig } from "@pendulum/shared/src/types";
 import { useEffect, useRef, useState } from "react";
+import { configureNode, controlNode, fetchSnapshot } from "../api";
 import { bobColor, mocha } from "../theme";
+
+// Wait this long after the last keystroke before pushing a field edit to the
+// gateway, so typing "12.5" is one request rather than four.
+const CONFIG_DEBOUNCE_MS = 300;
 
 /** Marks a trigger (gear handle / nodeId chip) so an outside-click doesn't fight its own toggle. */
 export const CONFIG_TRIGGER_ATTR = "data-config-trigger";
@@ -48,13 +53,77 @@ export function ConfigBox({
     return () => document.removeEventListener("pointerdown", onDown);
   }, [onClose]);
 
+  // Sync all four input strings and the committed config from a fresh config
+  // (used by refresh + randomize, which replace every field at once).
+  const syncInputs = (c: PendulumConfig) => {
+    setLength(String(c.length));
+    setMass(String(c.mass));
+    setWind(String(c.wind));
+    setGravity(String(c.gravity));
+    onChange(c);
+  };
+
+  // Re-pull this node's config from its snapshot and sync both the committed config
+  // and the local input strings (which don't otherwise track the config prop).
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => {
+    setRefreshing(true);
+    const snap = await fetchSnapshot(nodeId);
+    setRefreshing(false);
+    if (!snap) return;
+    setPaused(snap.status === "paused");
+    syncInputs(snap.config);
+  };
+
+  // Coalesce rapid field edits into one gateway write. We hold the latest full
+  // config in a ref and push it once typing settles (see CONFIG_DEBOUNCE_MS).
+  const pushTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const pendingConfig = useRef<PendulumConfig | null>(null);
+  const queuePush = (c: PendulumConfig) => {
+    pendingConfig.current = c;
+    clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(() => {
+      if (pendingConfig.current) configureNode(nodeId, pendingConfig.current);
+    }, CONFIG_DEBOUNCE_MS);
+  };
+  // Flush any pending edit on unmount so a fast close doesn't drop the last keystroke.
+  useEffect(
+    () => () => {
+      clearTimeout(pushTimer.current);
+      if (pendingConfig.current) configureNode(nodeId, pendingConfig.current);
+    },
+    [nodeId],
+  );
+
   // Try to commit a single field; ignore values that don't parse against the schema.
+  // On a valid parse we update local state immediately and debounce the gateway push.
   const commit = (key: "length" | "mass" | "wind" | "gravity", raw: string) => {
     if (raw.trim() === "") return;
     const value = Number(raw);
     if (Number.isNaN(value)) return;
     const parsed = PendulumConfigSchema.safeParse({ ...config, [key]: value });
-    if (parsed.success) onChange(parsed.data);
+    if (parsed.success) {
+      onChange(parsed.data);
+      queuePush(parsed.data);
+    }
+  };
+
+  // Lifecycle buttons: send the command, then reconcile from the returned snapshot.
+  const [busy, setBusy] = useState(false);
+  const act = async (action: "start" | "stop" | "pause" | "resume") => {
+    setBusy(true);
+    const snap = await controlNode(nodeId, action);
+    setBusy(false);
+    if (!snap) return;
+    setPaused(snap.status === "paused");
+    onChange(snap.config);
+  };
+
+  // Roll a fresh random config for this node, reflect it locally, and push it.
+  const randomize = () => {
+    const c = randomPendulumConfig(nodeId);
+    syncInputs(c);
+    configureNode(nodeId, c);
   };
 
   return (
@@ -89,7 +158,17 @@ export function ConfigBox({
         <span style={{ fontSize: 10, color: mocha.subtext0, whiteSpace: "nowrap" }}>
           ∠ {Math.round((config.angle * 180) / Math.PI)}°
         </span>
-        <button type="button" onClick={onClose} aria-label="Close" style={{ ...closeStyle, marginLeft: "auto" }}>
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={refreshing}
+          aria-label="Refresh from snapshot"
+          title="Refresh from snapshot"
+          style={{ ...closeStyle, marginLeft: "auto", fontSize: 12 }}
+        >
+          ⟳
+        </button>
+        <button type="button" onClick={onClose} aria-label="Close" style={closeStyle}>
           ×
         </button>
       </div>
@@ -132,18 +211,18 @@ export function ConfigBox({
         />
       </div>
 
-      {/* Controls (placeholders, not wired to the gateway yet) */}
+      {/* Lifecycle controls — proxied per-node through the gateway */}
       <div style={{ display: "flex", gap: 4 }}>
-        <button type="button" onClick={() => setPaused((p) => !p)} style={btnStyle}>
+        <button type="button" onClick={() => act(paused ? "resume" : "pause")} disabled={busy} style={btnStyle}>
           {paused ? "Resume" : "Pause"}
         </button>
-        <button type="button" style={btnStyle}>
+        <button type="button" onClick={() => act("start")} disabled={busy} style={btnStyle}>
           Start
         </button>
-        <button type="button" style={btnStyle}>
+        <button type="button" onClick={() => act("stop")} disabled={busy} style={btnStyle}>
           Stop
         </button>
-        <button type="button" style={btnStyle}>
+        <button type="button" onClick={randomize} style={btnStyle}>
           Rnd
         </button>
       </div>
@@ -206,4 +285,3 @@ function NumberField({ label, value, onChange }: { label: string; value: string;
     </label>
   );
 }
-
