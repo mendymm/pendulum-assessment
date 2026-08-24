@@ -6,10 +6,15 @@ This distributed sim is comprised of 3 main components.
 - A gateway, who will allow communication between nodes, serve the UI, and send location updates to the UI
 - A React UI
 
-Assumptions:
+# Assumptions:
 
-The assignment specified 5 node, and noted that we want to make the number of nodes configurable.
-I will assume that the upper bound on the number of nodes is 50, and working from this assumption, my design decisions will make more sense.
+- The number of simulation nodes is between 1 and 50
+- The nodes are all running on the same machine
+  - They have a synchronized clock
+  - There is very low latency between the gateway and nodes (since they are all on localhost) 
+- Simulation is running at 120hz
+- Ui is updated with the latest locations of the nodes at 60hz
+
 
 # Quick Start Guide
 
@@ -42,17 +47,17 @@ with the latest pendulum locations.
 
 To acutely model the pendulum the sim node has 2 main responsibilities
 
-The easy part. Calculating the pendulums location over time. This is done with some pure maths.
+A relatively easy job of calculating the pendulum's location over time. This is done with some pure maths.
 
-The fun part. Reacting to outside change, and talking to the outside world
+A more complex job, sending and receiving outside state.
  
 1. Allowing the UI (through the gateway) to configure the angel, mass, length, anchor position, wind, and gravity.
 2. Keeping an up to date view of all other neighbors, allowing the sim to detect collisions
 3. Each time the pendulums location changes notifying the gateway about it
 
 
-The approach I decided to take is to model the simulation node as a state machine,
-which lets me reason about the simulation as a pure function which I can easily test, it looks something like this
+The approach I decided to take is to model the simulation as a state machine,
+which lets me reason about the simulation as a pure function which I can easily test. The function looks something like this.
 
 ```ts
 type Outcome = 
@@ -61,28 +66,31 @@ type Outcome =
 function transition(sim: Sim, command: Command): Outcome
 ```
 
-Then in a "shell" loop I call the `transition` function with the current sim state, and replace the current state with the newly returned state.
+The simulation is split into a *shell* and a *core*. The *core* is a pure state machine, relying only on it's inputs, and is 100% deterministic. And the *shell* is the rest of the program.
 
-And since the sim needs to update the gateway with the sim current location, and to announce a collision. The sim returns a list of side effects from each transition of the state machine.
-The effects are then executed by the "shell".
+The *shell* can further be split into 2 main components
+
+1. (multiple) *producers* who send *commands* into an in-memory MPSC.
+2. (single) *consumer*: The *consumer* holds the simulation state, and for every new *command* sent to the queue, it calls `transition(state,command): Outcome` replacing the old state with the result of `Outcome`. It also executes side effects returned by the state machine (such as sending messages to the ws)
+
+There are 3 "kinds" of *producers*
+
+1. An HTTP control plane, who emit life-cycle events (`start`, `stop`, etc.), and configuration events who change the parameters of a running simulation.
+2. A ws listener, who listen's for broadcast messages from other simulations.
+3. A timer, who sends out the `tick` command every `N = SimUpdateHz` (which in development I arbitrarily set to 120Hz)
+
 
 Modeling the simulation like this has 2 main advantages for me
 
 1. (The **Primary** reason). It makes it easier to reason about the simulation.
 2. It allows extensive, and thorough testing.
 
-There are 3 different sources of a `Command`
-
-1. An HTTP control plane, who emit life-cycle events (`start`, `stop`, etc.), and configuration events who change the parameters of a running simulation.
-2. A ws listener, who listen's for `PendulumCollisionUpdate` events to be sent from the gateway
-3. A timer, who sends out the `tick` command every `N = SimUpdateHz` (which in development I arbitrarily set to 120Hz)
 
 Since the simulation is a state machine, and each time we `transition` the state machine we need to discard the old sim state, and save the new sim state.
 And having 3 places who arbitrarily modify a global `sim` variable felt like it would get out of hand, I opted for an in-memory queue approach.
 
-The queue is an MPSC (multi producer, single consumer) queue, every 3 of the above "command emitters" send to the `inbox`, and the "shell" will loop through each `Command` in the inbox, call `transition(sim, commandFromQueue)`, and update `sim = simFromTransisionStep` for the next iteration of the loop.
-
 The `transition` function can reject a command. For example, calling `pasue` when the simulation is not in it's `running` state is incorrect, and the `transition` function returns a `rejection`.
+
 And you can imagine how if the sim gets a `pause` command over HTTP while the `status` is not `running`, we will be unable to return the `rejection` as an HTTP response.
 
 The solution is kinda annoying, but it still works. The mailbox holds `Envelope`'s, and each envelope as an optional reply callback, allowing the outcome to be communicated back to the HTTP handler, and back to the user who called the endpoint.
@@ -127,8 +135,36 @@ To send these updates into the simulation, I considered sending a `PendulumLocat
 I ended up going with a global `Map<nodeId,PendulumLocationUpdate>` and updating it on each `PendulumLocationUpdate` received by the sim node. Then every time the "timer" wakes to send a `tick` event, it takes a snapshot of the global map, and passes it into the sim as `worldState: BobPosition[]`
 
 
-# Collision Detection 
+# Collision Triggered Restarts
 
+The spec says 
+- "When a collision is detected, send a **STOP message** to all instances" 
+- "After a STOP, the simulation should halt. The pendulum sends a **RESTART message** and waits until all instances receive **RESTART messages** from all other instances, at which point each pendulum waits 5 seconds and **restarts**"
+
+I interpret this as the following.
+
+*Once a collision is detected, all nodes must stop. And after 5 seconds, they should all restart.*
+
+My implementation achieves the outcome the spec is looking for, without following the letter of the spec.
+
+I don't want the nodes to directly talk to each other (see [Why Use a Gateway](#why-use-a-gateway) for why). So the collision induced restart is not sent directly from the node who detected the collision to all other nodes.
+
+
+
+
+# Why Use a Gateway
+
+Early on in the design process I ruled out nodes talking to each other directly. And instead, nodes send messages to a central gateway, who will broadcast the messages to all other nodes.
+
+Consider that to detect collisions between nodes, each node must keep a **very** up to date map of each other node it might collide into. And that **any** node can collide with **any other** node.
+One approach I might take is to have a node mesh, where each node talks to every other node. This is O(n^2) and does not scale. At just 50 nodes (see [assumptions](#assumptions)) we would have 1225 connections (and 2450 open sockets)
+
+So having a central gateway solves this problem, each node updates the gateway, the gateway then updates each other node.
+
+The gateway does not broadcast `PendulumLocationUpdate` events. If we have 50 nodes emiting `PendulumLocationUpdate` 120hz, that would required the gateway to send 294000 ws messages/second.
+Instead, the gateway updates an in-memory map, and sends the content of that map to all nodes at 120hz. This results in about the same acuuracy as the a strict broadcast appraoch would give us (each node is updated with the location of all other nodes at 120hz). But we only send 6000 events/sec. 
+
+If effect the number of events goes from `O(<N = simCount * simHz>^2)` to `O(<N = simCount * simHz>)`. Please note that the we are still `O(N^2)` on the number of bytes we send to each node, but that is much less of a issue, and if we really cared we can easly switch to protobuf, or even just a simple zstd/brotli compression
 
 # Tests
 
