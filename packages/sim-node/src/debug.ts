@@ -1,11 +1,11 @@
 import type { SimSnapshot } from "@pendulum/shared/src/types";
 import { wsEventCounts } from "./gatewayWsConn";
-import { Command, type Sim, snapshot } from "./simulation";
+import { type Command, type Sim, snapshot } from "./simulation";
 
 export function debugSimState(iterCount: number, sim: Sim, commandType: Command["type"]) {
   if (process.env.DEBUG === undefined) return;
 
-  if (commandType != "tick" || iterCount % 20 === 0) {
+  if (commandType !== "tick" || iterCount % 20 === 0) {
     console.log(formatSnapshot(snapshot(sim)));
   }
 }

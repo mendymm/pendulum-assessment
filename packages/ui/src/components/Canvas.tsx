@@ -2,14 +2,8 @@ import type { PendulumLocation } from "@pendulum/shared/src/types";
 import { Fragment, forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { bobColor, mocha } from "../theme";
 import { AnchorHandle } from "./AnchorHandle";
-import { type BobPose, BobHandle } from "./BobHandle";
-import {
-  locationGeometry,
-  Pendulum,
-  type PendulumGeometry,
-  pendulumGeometry,
-  type PendulumInstance,
-} from "./Pendulum";
+import { BobHandle, type BobPose } from "./BobHandle";
+import { locationGeometry, Pendulum, type PendulumGeometry, type PendulumInstance, pendulumGeometry } from "./Pendulum";
 
 /**
  * The camera into the conceptually-infinite world.

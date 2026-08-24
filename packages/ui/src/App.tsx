@@ -2,9 +2,9 @@ import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
 import {
   defaultPendulumConfig,
   type PendulumConfig,
-  type PendulumLocation,
   PendulumConfigPatchSchema,
   PendulumConfigSchema,
+  type PendulumLocation,
   type SimSnapshot,
 } from "@pendulum/shared/src/types";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -97,7 +97,9 @@ export function App() {
   // Live drag: local only, no gateway write.
   const editLocal = (nodeId: number, patch: ConfigEdit) =>
     setPendulums((prev) =>
-      prev.map((p) => (p.nodeId === nodeId ? { ...p, config: PendulumConfigSchema.parse({ ...p.config, ...patch }) } : p)),
+      prev.map((p) =>
+        p.nodeId === nodeId ? { ...p, config: PendulumConfigSchema.parse({ ...p.config, ...patch }) } : p,
+      ),
     );
 
   // Release: commit locally and push just the fields that changed.

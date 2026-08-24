@@ -183,7 +183,9 @@ export function transition(sim: Sim, command: Command): Outcome {
       const config = { ...sim.config, ...command.config };
       // changing the launch angle drops the bob from rest, so kill any velocity
       const angleChanged = command.config.angle !== undefined && command.config.angle !== sim.config.angle;
-      const pendulumState = angleChanged ? {  angularVelocity: 0, angle: (command.config.angle??sim.pendulumState.angle) } : sim.pendulumState;
+      const pendulumState = angleChanged
+        ? { angularVelocity: 0, angle: command.config.angle ?? sim.pendulumState.angle }
+        : sim.pendulumState;
       // const pendulumState = angleChanged ? { ...sim.pendulumState, angularVelocity: 0, } : sim.pendulumState;
       return ok({ ...sim, config, pendulumState });
     }
