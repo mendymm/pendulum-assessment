@@ -12,10 +12,10 @@
  * a pure read of "where is the bob on the grid" — the very thing under test).
  */
 
-import type { Angle, Length, Mass, NodeId, PendulumConfig, Point } from "@pendulum/shared/src/types";
+import type { Length, Mass, NodeId, PendulumConfig, Point } from "@pendulum/shared/src/types";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { type Command, type Outcome, posistion, type Sim, transition } from "../simulation";
+import { type Command, posistion, type Sim, transition } from "../simulation";
 import { angle, configPatch, status, velocity } from "./testSupport";
 
 const nodeId = (n: number) => n as NodeId;

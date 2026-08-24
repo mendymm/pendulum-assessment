@@ -12,10 +12,9 @@
  * (`EDGES`), found by BFS.
  */
 
+import { type NodeId, type SimStatus, SimStatusSchema } from "@pendulum/shared/src/types";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-
-import { type NodeId, type SimStatus, SimStatusSchema } from "@pendulum/shared/src/types";
 import { type Command, createSim, type Sim, transition } from "../simulation";
 
 const NODE_ID = 0 as NodeId;
@@ -43,14 +42,12 @@ type Equals<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B 
 //   - their intersection must be empty (no status listed as both).
 // If either fails, the spec's type resolves to an { ERROR } shape that won't match the
 // object literal, so `defineCommandStates` fails to compile at the offending entry.
-type ValidatePartition<S extends CommandStates> = Equals<
-  S["valid"][number] | S["rejected"][number],
-  SimStatus
-> extends true
-  ? Equals<S["valid"][number] & S["rejected"][number], never> extends true
-    ? S
-    : { ERROR: "valid and rejected must not overlap" }
-  : { ERROR: "valid and rejected together must cover every SimStatus" };
+type ValidatePartition<S extends CommandStates> =
+  Equals<S["valid"][number] | S["rejected"][number], SimStatus> extends true
+    ? Equals<S["valid"][number] & S["rejected"][number], never> extends true
+      ? S
+      : { ERROR: "valid and rejected must not overlap" }
+    : { ERROR: "valid and rejected together must cover every SimStatus" };
 
 const defineCommandStates = <const S extends CommandStates>(spec: S & ValidatePartition<S>): S => spec;
 
@@ -90,6 +87,7 @@ const pathTo = (target: SimStatus): Command[] | null => {
   const queue: { status: SimStatus; path: Command[] }[] = [{ status: INITIAL_STATUS, path: [] }];
   const seen = new Set<SimStatus>([INITIAL_STATUS]);
   while (queue.length > 0) {
+    // biome-ignore lint/style/noNonNullAssertion: is test
     const { status, path } = queue.shift()!;
     for (const edge of EDGES) {
       if (edge.from !== status || seen.has(edge.to)) continue;
