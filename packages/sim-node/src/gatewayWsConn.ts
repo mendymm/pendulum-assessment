@@ -6,6 +6,14 @@ import type { Mailbox } from "./mailbox";
 export type NeighborsLocation = Map<number, PendulumLocation>;
 export type SendWsMessage = (wsMsg: WsEnvelope) => void;
 
+// running tally of how many WS events we've received, keyed by event type. purely for
+// debugging/observability — a simple module global, incremented on each WS message and
+// read directly by the debug output.
+export const wsEventCounts: Record<WsEnvelope["type"], number> = {
+  PendulumLocationUpdate: 0,
+  PendulumCollisionUpdate: 0,
+};
+
 export function connectToGateway(
   nodeId: number,
   inbox: Mailbox,
@@ -35,6 +43,8 @@ export function connectToGateway(
         console.log(`Unexpected ws message, ignore message. msg: ${evt.data.toString()}`);
         return;
       }
+
+      wsEventCounts[wsEnvelope.type]++;
 
       switch (wsEnvelope.type) {
         case "PendulumLocationUpdate":

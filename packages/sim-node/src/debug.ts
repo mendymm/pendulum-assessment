@@ -1,4 +1,5 @@
 import type { SimSnapshot } from "@pendulum/shared/src/types";
+import { wsEventCounts } from "./gatewayWsConn";
 import { Command, type Sim, snapshot } from "./simulation";
 
 export function debugSimState(iterCount: number, sim: Sim, commandType: Command["type"]) {
@@ -7,6 +8,12 @@ export function debugSimState(iterCount: number, sim: Sim, commandType: Command[
   if (commandType != "tick" || iterCount % 20 === 0) {
     console.log(formatSnapshot(snapshot(sim)));
   }
+}
+
+// one-line summary of WS events received so far, keyed by event type.
+function formatWsEventCounts(): string {
+  const parts = Object.entries(wsEventCounts).map(([type, count]) => `${type} ${count}`);
+  return `  ws events · ${parts.join(" · ")}`;
 }
 
 // vibe coded...
@@ -32,5 +39,6 @@ export function formatSnapshot(snap: SimSnapshot): string {
     `  bob (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)})m  r ${bobRadius.toFixed(2)}m  len ${config.length}m  mass ${config.mass}kg`,
     `  wind ${config.wind}N  g ${config.gravity}m/s²`,
     `  cmds ✓${commandsCompleted} ✗${commandsRejected}`,
+    formatWsEventCounts(),
   ].join("\n");
 }
