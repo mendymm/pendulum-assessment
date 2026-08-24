@@ -23,6 +23,19 @@ export const pendulumRestarts = new Map<number, number>();
 // carrying a new countdown still goes out. (ESM live binding: importers read the current value.)
 export let lastWorldChangeAt = 0;
 
+// ws message tallies keyed by message type, global to the gateway process and read by the
+// debug loop. recv = messages arriving from sim nodes; sent = messages we push out (each
+// fanned-out node update, plus every UI frame — counted from main.ts via `countSent`).
+export const wsRecvCounts: Record<string, number> = {};
+export const wsSentCounts: Record<string, number> = {};
+
+const bump = (counts: Record<string, number>, key: string) => {
+  counts[key] = (counts[key] ?? 0) + 1;
+};
+
+// exposed so the UI feed in main.ts can tally the frames it sends
+export const countSent = (type: string) => bump(wsSentCounts, type);
+
 export const simWsHandler = upgradeWebSocket((c) => {
   const nodeId = Number(c.req.query("nodeId"));
 
@@ -47,6 +60,8 @@ function onMessage(evt: MessageEvent<WSMessageReceive>) {
     console.log(`Unexpected ws message, ignore message. msg: ${evt.data.toString()}`);
     return;
   }
+
+  bump(wsRecvCounts, wsEnvelope.type);
 
   switch (wsEnvelope.type) {
     case "PendulumLocationUpdate": {
@@ -89,6 +104,8 @@ function markWorldChanged() {
 function fanoutMessage(msg: WsEnvelope, senderNodeId: number) {
   const forward = JSON.stringify(msg);
   for (const [id, ws] of sockets) {
-    if (id !== senderNodeId) ws.send(forward);
+    if (id === senderNodeId) continue;
+    ws.send(forward);
+    bump(wsSentCounts, msg.type);
   }
 }

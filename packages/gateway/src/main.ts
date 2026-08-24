@@ -6,7 +6,8 @@ import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import { addControlRoutes } from "./api";
-import { lastWorldChangeAt, pendulumLocations, pendulumRestarts, simWsHandler } from "./wsHandler";
+import { startGatewayDebugLoop } from "./debug";
+import { countSent, lastWorldChangeAt, pendulumLocations, pendulumRestarts, simWsHandler } from "./wsHandler";
 
 const app = new Hono();
 
@@ -35,6 +36,7 @@ app.get(
         // sim (where lastWorldChangeAt never advances) sees the world instead of a
         // blank canvas that looks like a dead connection.
         ws.send(currentFrame());
+        countSent("uiFrame");
         lastFrameSentAt = Date.now();
 
         timer = setInterval(() => {
@@ -45,6 +47,7 @@ app.get(
           // countdown itself from the restart deadline, so it stays live without us.
           if (lastWorldChangeAt <= lastFrameSentAt) return;
           ws.send(currentFrame());
+          countSent("uiFrame");
           lastFrameSentAt = Date.now();
         }, 1000 / RUNTIME_CONFIG.uiUpdateHz);
       },
@@ -62,6 +65,8 @@ app.use("/*", serveStatic({ root: UI_ROOT }));
 app.get("/*", serveStatic({ path: join(UI_ROOT, "index.html") }));
 
 console.log(`Listing on 127.0.0.1:${RUNTIME_CONFIG.gatewayPort}`);
+
+startGatewayDebugLoop();
 
 serve({
   fetch: app.fetch,
