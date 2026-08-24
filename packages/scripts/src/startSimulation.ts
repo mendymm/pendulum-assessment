@@ -6,6 +6,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
 
 // packages/scripts/src -> repo root
@@ -27,6 +28,46 @@ interface ManagedProcess {
   label: string;
   child: ChildProcess;
   recent: string[];
+}
+
+// which processes' output the dashboard shows. Both default on; disable with the negated
+// flags (--no-gateway-logs / --no-node-logs). Hidden processes still spawn and run — we
+// just don't render their output.
+interface LogOptions {
+  gatewayLogs: boolean;
+  nodeLogs: boolean;
+}
+
+const HELP_TEXT = `Usage: tsx packages/scripts/src/startSimulation.ts [options]
+
+Spawns the gateway and ${RUNTIME_CONFIG.simCount} simulation nodes, showing their live output
+in a TUI dashboard.
+
+Options:
+  --no-gateway-logs   Hide the gateway's output (still runs)
+  --no-node-logs      Hide the sim nodes' output (still run)
+  -h, --help          Show this help and exit
+`;
+
+function parseLogOptions(): LogOptions {
+  const { values } = parseArgs({
+    options: {
+      "gateway-logs": { type: "boolean", default: true },
+      "node-logs": { type: "boolean", default: true },
+      help: { type: "boolean", short: "h", default: false },
+    },
+    allowNegative: true,
+  });
+
+  if (values.help) {
+    process.stdout.write(HELP_TEXT);
+    process.exit(0);
+  }
+
+  return {
+    gatewayLogs: values["gateway-logs"] ?? true,
+    nodeLogs: values["node-logs"] ?? true,
+  };
 }
 
 function buildCommands(): Command[] {
@@ -72,17 +113,19 @@ function spawnProcess(command: Command): ManagedProcess {
   return managed;
 }
 
-function render(processes: ManagedProcess[]) {
+function render(processes: ManagedProcess[], options: LogOptions) {
   // clear screen and move cursor to home
   process.stdout.write("\x1b[2J\x1b[H");
   process.stdout.write(`pendulum simulation — ${new Date().toISOString()}\n\n`);
 
-  // render the gateway below all other nodes
-  const ordered = [...processes].sort((a, b) => {
-    if (a.label === "gateway") return 1;
-    if (b.label === "gateway") return -1;
-    return 0;
-  });
+  // render the gateway below all other nodes, hiding whichever the flags disabled
+  const ordered = [...processes]
+    .filter((proc) => (proc.label === "gateway" ? options.gatewayLogs : options.nodeLogs))
+    .sort((a, b) => {
+      if (a.label === "gateway") return 1;
+      if (b.label === "gateway") return -1;
+      return 0;
+    });
 
   for (const proc of ordered) {
     process.stdout.write(`[${proc.label}] (pid ${proc.child.pid})\n`);
@@ -95,10 +138,11 @@ function render(processes: ManagedProcess[]) {
 }
 
 function main() {
+  const options = parseLogOptions();
   const processes = buildCommands().map(spawnProcess);
 
-  render(processes);
-  const timer = setInterval(() => render(processes), REFRESH_MS);
+  render(processes, options);
+  const timer = setInterval(() => render(processes, options), REFRESH_MS);
 
   const shutdown = () => {
     clearInterval(timer);
