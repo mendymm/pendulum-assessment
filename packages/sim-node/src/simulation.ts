@@ -26,8 +26,8 @@ export interface Sim {
   readonly config: PendulumConfig;
   readonly status: SimStatus;
   readonly pendulumState: PendulumState;
-  readonly commandsCompleted: number;
-  readonly commandsRejected: number;
+  readonly commandsCompleted: CommandCounts;
+  readonly commandsRejected: CommandCounts;
   readonly collision: Collision | null;
   readonly generation: number; // bumped once per collision episode
 }
@@ -76,6 +76,27 @@ export type Outcome =
   | { result: "ok"; sim: Sim; effects: Effect[] }
   | { result: "rejected"; sim: Sim; rejection: Rejection };
 
+// how many commands of each type we've completed/rejected. same style as the WS
+// event tally: a map keyed by the union of command types, every key present at 0.
+export type CommandCounts = Record<Command["type"], number>;
+
+const zeroCounts = (): CommandCounts => ({
+  start: 0,
+  pause: 0,
+  resume: 0,
+  stop: 0,
+  collision: 0,
+  restart: 0,
+  configure: 0,
+  tick: 0,
+});
+
+// bump one command type's tally by one, returning a new map (keeps `Sim` immutable)
+const bumpCount = (counts: CommandCounts, type: Command["type"]): CommandCounts => ({
+  ...counts,
+  [type]: counts[type] + 1,
+});
+
 // new sims always start with these defaults
 export function createSim(nodeId: NodeId): Sim {
   return {
@@ -86,8 +107,8 @@ export function createSim(nodeId: NodeId): Sim {
       angularVelocity: 0,
     },
     status: "stopped",
-    commandsCompleted: 0,
-    commandsRejected: 0,
+    commandsCompleted: zeroCounts(),
+    commandsRejected: zeroCounts(),
     collision: null,
     generation: 0,
   };
@@ -99,10 +120,10 @@ const RESTART_MS = RUNTIME_CONFIG.restartSec * 1000;
 // A brand-new episode (was not collided) bumps the generation — that bump is the
 // fence a stale restart from a previous episode fails to match. Within an episode
 // we only converge (merge toward the earliest report) and reschedule if it changed.
-function applyCollision(sim: Sim, c: Collision, extra: Effect[] = []): Outcome {
+function applyCollision(sim: Sim, command: Command, c: Collision, extra: Effect[] = []): Outcome {
   if (sim.collision === null) {
     const generation = sim.generation + 1;
-    return ok({ ...sim, status: "collided", collision: c, generation }, [
+    return ok({ ...sim, status: "collided", collision: c, generation }, command, [
       ...extra,
       { type: "scheduleRestart", at: c.timestamp + RESTART_MS, generation },
     ]);
@@ -110,22 +131,22 @@ function applyCollision(sim: Sim, c: Collision, extra: Effect[] = []): Outcome {
   // mergeCollision returns the SAME reference when nothing changed, so
   // reference-equality is a valid "did it change?" check → skip a pointless reschedule.
   const merged = mergeCollision(sim.collision, c);
-  if (merged === sim.collision) return ok(sim, extra);
-  return ok({ ...sim, collision: merged }, [
+  if (merged === sim.collision) return ok(sim, command, extra);
+  return ok({ ...sim, collision: merged }, command, [
     ...extra,
     { type: "scheduleRestart", at: merged.timestamp + RESTART_MS, generation: sim.generation },
   ]);
 }
 
-const ok = (nextSim: Sim, effects: Effect[] = []): Outcome => ({
+const ok = (nextSim: Sim, command: Command, effects: Effect[] = []): Outcome => ({
   result: "ok",
-  sim: { ...nextSim, commandsCompleted: nextSim.commandsCompleted + 1 },
+  sim: { ...nextSim, commandsCompleted: bumpCount(nextSim.commandsCompleted, command.type) },
   effects,
 });
 
 const reject = (nextSim: Sim, command: Command, reason: string): Outcome => ({
   result: "rejected",
-  sim: { ...nextSim, commandsRejected: nextSim.commandsRejected + 1 },
+  sim: { ...nextSim, commandsRejected: bumpCount(nextSim.commandsRejected, command.type) },
   rejection: { command, from: nextSim.status, reason },
 });
 
@@ -136,35 +157,41 @@ export function transition(sim: Sim, command: Command): Outcome {
   switch (command.type) {
     case "start":
       // a manual start comes back fresh: clear any collision and relaunch from config.angle
-      return ok({
-        ...sim,
-        pendulumState: { angle: sim.config.angle, angularVelocity: 0 },
-        status: "running",
-        collision: null,
-      });
+      return ok(
+        {
+          ...sim,
+          pendulumState: { angle: sim.config.angle, angularVelocity: 0 },
+          status: "running",
+          collision: null,
+        },
+        command,
+      );
 
     case "pause":
-      return sim.status === "running" ? ok({ ...sim, status: "paused" }) : reject(sim, command, "not running");
+      return sim.status === "running" ? ok({ ...sim, status: "paused" }, command) : reject(sim, command, "not running");
 
     case "resume":
-      return sim.status === "paused" ? ok({ ...sim, status: "running" }) : reject(sim, command, "not paused");
+      return sim.status === "paused" ? ok({ ...sim, status: "running" }, command) : reject(sim, command, "not paused");
 
     case "collision":
       // valid from ANY status: it's a merge toward the earliest report, never a blind
       // overwrite, so it's idempotent and safe to accept anywhere.
-      return applyCollision(sim, command.collision);
+      return applyCollision(sim, command, command.collision);
 
     case "restart":
       // fenced twice: status rejects a duplicate restart within this episode (we're
       // already running), generation rejects a leftover timer from a previous episode.
       if (sim.status !== "collided") return reject(sim, command, "not collided");
       if (command.generation !== sim.generation) return reject(sim, command, "stale restart");
-      return ok({
-        ...sim,
-        status: "running",
-        collision: null,
-        pendulumState: { angle: sim.config.angle, angularVelocity: 0 },
-      });
+      return ok(
+        {
+          ...sim,
+          status: "running",
+          collision: null,
+          pendulumState: { angle: sim.config.angle, angularVelocity: 0 },
+        },
+        command,
+      );
 
     case "stop":
       // freeze in place: keep the current angle, just kill the velocity.
@@ -172,12 +199,15 @@ export function transition(sim: Sim, command: Command): Outcome {
       // never looks half-collided.
       return sim.status === "stopped"
         ? reject(sim, command, "already stopped")
-        : ok({
-            ...sim,
-            status: "stopped",
-            collision: null,
-            pendulumState: { ...sim.pendulumState, angularVelocity: 0 },
-          });
+        : ok(
+            {
+              ...sim,
+              status: "stopped",
+              collision: null,
+              pendulumState: { ...sim.pendulumState, angularVelocity: 0 },
+            },
+            command,
+          );
 
     case "configure": {
       const config = { ...sim.config, ...command.config };
@@ -187,7 +217,7 @@ export function transition(sim: Sim, command: Command): Outcome {
         ? { angularVelocity: 0, angle: command.config.angle ?? sim.pendulumState.angle }
         : sim.pendulumState;
       // const pendulumState = angleChanged ? { ...sim.pendulumState, angularVelocity: 0, } : sim.pendulumState;
-      return ok({ ...sim, config, pendulumState });
+      return ok({ ...sim, config, pendulumState }, command);
     }
 
     case "tick": {
@@ -204,12 +234,12 @@ export function transition(sim: Sim, command: Command): Outcome {
         },
       };
       const hit = detectCollision(sim.nodeId, me, command.worldState);
-      if (!hit) return ok(stepped, [reportLocation]);
+      if (!hit) return ok(stepped, command, [reportLocation]);
 
       // a tick-detected hit always starts a new episode (stepped is running, so
       // stepped.collision is null) — applyCollision bumps the generation for us.
       const c: Collision = { reportingNode: sim.nodeId, with: hit.nodeId, timestamp: command.now };
-      return applyCollision(stepped, c, [reportLocation, { type: "reportCollision", data: c }]);
+      return applyCollision(stepped, command, c, [reportLocation, { type: "reportCollision", data: c }]);
     }
   }
 }

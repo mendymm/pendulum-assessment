@@ -16,6 +16,14 @@ function formatWsEventCounts(): string {
   return `  ws events · ${parts.join(" · ")}`;
 }
 
+// one-line summary of a command tally, keyed by command type (skips unseen types).
+function formatCounts(counts: Record<string, number>): string {
+  const parts = Object.entries(counts)
+    .filter(([, n]) => n > 0)
+    .map(([type, n]) => `${type} ${n}`);
+  return parts.length ? parts.join(" · ") : "none";
+}
+
 // vibe coded...
 
 // A tiny gauge showing where the bob is relative to straight-down (`|`), clamped
@@ -36,9 +44,9 @@ export function formatSnapshot(snap: SimSnapshot): string {
   return [
     `node ${nodeId} · ${status} · gen ${generation}`,
     `  angle ${config.angle.toFixed(2)}rad (${deg}°) [${angleGauge(config.angle)}]  anchorX ${config.anchorX.toFixed(2)}m`,
-    `  bob (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)})m  r ${bobRadius.toFixed(2)}m  len ${config.length}m  mass ${config.mass}kg`,
-    `  wind ${config.wind}N  g ${config.gravity}m/s²`,
-    `  cmds ✓${commandsCompleted} ✗${commandsRejected}`,
+    `  bob (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)})m  r ${bobRadius.toFixed(2)}m  len ${config.length}m  mass ${config.mass}kg  wind ${config.wind}N  g ${config.gravity}m/s²`,
+    `  ✓ completed · ${formatCounts(commandsCompleted)}`,
+    `  ✗ rejected · ${formatCounts(commandsRejected)}`,
     formatWsEventCounts(),
   ].join("\n");
 }

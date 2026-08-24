@@ -85,6 +85,9 @@ describe("transition fuzzing", () => {
   });
 
   it("conserves counters: completed + rejected equals commands seen", () => {
+    // counters are now per-command-type maps; sum the values for the totals.
+    const total = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
+
     fc.assert(
       fc.property(commandSequence, (commands) => {
         let sim = createSim(nodeId(0));
@@ -94,14 +97,14 @@ describe("transition fuzzing", () => {
           seen++;
 
           // exactly one of the two counters advanced by exactly one this step
-          expect(outcome.sim.commandsCompleted + outcome.sim.commandsRejected).toBe(seen);
+          expect(total(outcome.sim.commandsCompleted) + total(outcome.sim.commandsRejected)).toBe(seen);
           // and the result tag agrees with which counter moved
           if (outcome.result === "ok") {
-            expect(outcome.sim.commandsCompleted).toBe(sim.commandsCompleted + 1);
-            expect(outcome.sim.commandsRejected).toBe(sim.commandsRejected);
+            expect(total(outcome.sim.commandsCompleted)).toBe(total(sim.commandsCompleted) + 1);
+            expect(total(outcome.sim.commandsRejected)).toBe(total(sim.commandsRejected));
           } else {
-            expect(outcome.sim.commandsRejected).toBe(sim.commandsRejected + 1);
-            expect(outcome.sim.commandsCompleted).toBe(sim.commandsCompleted);
+            expect(total(outcome.sim.commandsRejected)).toBe(total(sim.commandsRejected) + 1);
+            expect(total(outcome.sim.commandsCompleted)).toBe(total(sim.commandsCompleted));
           }
 
           sim = outcome.sim;

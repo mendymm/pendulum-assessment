@@ -50,8 +50,8 @@ export const SimSnapshotSchema = z.object({
   status: SimStatusSchema,
   posistion: PointSchema,
   bobRadius: BobRadiusSchema,
-  commandsCompleted: z.number(),
-  commandsRejected: z.number(),
+  commandsCompleted: z.record(z.string(), z.number()),
+  commandsRejected: z.record(z.string(), z.number()),
   generation: z.number(),
 });
 
