@@ -16,7 +16,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { type NodeId, type SimStatus, SimStatusSchema } from "@pendulum/shared/src/types";
-import { type Command, createSim, type Sim, transition } from "./simulation";
+import { type Command, createSim, type Sim, transition } from "../simulation";
 
 const NODE_ID = 0 as NodeId;
 
