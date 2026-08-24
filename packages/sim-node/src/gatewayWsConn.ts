@@ -11,6 +11,7 @@ export type SendWsMessage = (wsMsg: WsEnvelope) => void;
 // read directly by the debug output.
 export const wsEventCounts: Record<WsEnvelope["type"], number> = {
   PendulumLocationUpdate: 0,
+  WorldSnapshot: 0,
   PendulumCollisionUpdate: 0,
 };
 
@@ -47,7 +48,15 @@ export function connectToGateway(
       wsEventCounts[wsEnvelope.type]++;
 
       switch (wsEnvelope.type) {
+        case "WorldSnapshot":
+          // the gateway sends the whole world in one message; replace our view wholesale.
+          // (our own entry is included — detectCollision filters self out.)
+          neighbors.clear();
+          for (const loc of wsEnvelope.data) neighbors.set(loc.nodeId, loc);
+          return;
         case "PendulumLocationUpdate":
+          // legacy single-node path; the gateway now sends WorldSnapshot, but a stray
+          // single update is still safe to fold into our neighbour view.
           neighbors.set(wsEnvelope.data.nodeId, wsEnvelope.data);
           return;
         case "PendulumCollisionUpdate": {

@@ -25,7 +25,8 @@ export let lastWorldChangeAt = 0;
 
 // ws message tallies keyed by message type, global to the gateway process and read by the
 // debug loop. recv = messages arriving from sim nodes; sent = messages we push out (each
-// fanned-out node update, plus every UI frame — counted from main.ts via `countSent`).
+// location broadcast + each fanned-out collision, plus every UI frame — counted from
+// main.ts via `countSent`).
 export const wsRecvCounts: Record<string, number> = {};
 export const wsSentCounts: Record<string, number> = {};
 
@@ -70,7 +71,8 @@ function onMessage(evt: MessageEvent<WSMessageReceive>) {
       // a location means this node is ticking again → it's no longer collided.
       if (pendulumRestarts.delete(nodeId)) markWorldChanged();
       markWorldChanged();
-      fanoutMessage(wsEnvelope, nodeId);
+      // NOTE: we no longer fan this out per-event. Locations are broadcast to nodes on a
+      // fixed simHz cadence by `broadcastLocations` — this just records the latest position.
       break;
     }
     case "PendulumCollisionUpdate": {
@@ -83,6 +85,10 @@ function onMessage(evt: MessageEvent<WSMessageReceive>) {
       fanoutMessage(wsEnvelope, wsEnvelope.data.reportingNode);
       break;
     }
+    case "WorldSnapshot":
+      // the gateway produces these; a node should never send one to us.
+      console.log("unexpected WorldSnapshot from a node, ignoring");
+      break;
     default:
       assertNever(wsEnvelope);
   }
@@ -99,13 +105,46 @@ function markWorldChanged() {
   lastWorldChangeAt = Date.now();
 }
 
-// fan out updates to the all other sim nodes
-// I am assuming that we will have < ~50 nodes, so this fan out is not prohibitively expensive
+// Send one already-serialized payload to a set of sockets concurrently (rather than
+// awaiting each in turn), isolating per-socket failures so one dead socket doesn't abort
+// the whole round. I am assuming < ~50 nodes, so fanning out to all at once is fine.
+async function sendToAll(targets: Iterable<WSContext>, payload: string, type: string): Promise<void> {
+  await Promise.all(
+    [...targets].map(async (ws) => {
+      try {
+        await ws.send(payload);
+        bump(wsSentCounts, type);
+      } catch {
+        // socket went away mid-send; the next round will catch it up
+      }
+    }),
+  );
+}
+
+// fan a message out to every sim node except the sender (used for collisions)
 function fanoutMessage(msg: WsEnvelope, senderNodeId: number) {
   const forward = JSON.stringify(msg);
-  for (const [id, ws] of sockets) {
-    if (id === senderNodeId) continue;
-    ws.send(forward);
-    bump(wsSentCounts, msg.type);
-  }
+  const targets = [...sockets].filter(([id]) => id !== senderNodeId).map(([, ws]) => ws);
+  void sendToAll(targets, forward, msg.type);
+}
+
+// wall-clock (ms) of the last location broadcast, so we can skip a round when nothing in
+// the world moved since — same guard the UI feed uses against re-sending a stale frame.
+let lastLocationBroadcastAt = 0;
+
+// Push every node the whole world in a single `WorldSnapshot` message on a fixed cadence,
+// decoupling the send rate from the (bursty, per-tick) receive rate. One message per node
+// per round (nodes filter out their own entry), so this is N sends/round rather than the
+// old N·(N-1). Nodes replace their neighbour view from it, so it's idempotent. Skipped
+// while the world is frozen (paused/stopped/all-collided) — `markWorldChanged` unblocks it.
+function broadcastLocations() {
+  if (lastWorldChangeAt <= lastLocationBroadcastAt) return;
+  const payload = JSON.stringify({ type: "WorldSnapshot", data: [...pendulumLocations.values()] } satisfies WsEnvelope);
+  void sendToAll(sockets.values(), payload, "WorldSnapshot");
+  lastLocationBroadcastAt = Date.now();
+}
+
+// start the location broadcast loop; call once at startup
+export function startLocationBroadcast(everyMs = 1000 / RUNTIME_CONFIG.simHz) {
+  setInterval(broadcastLocations, everyMs);
 }

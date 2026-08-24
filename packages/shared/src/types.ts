@@ -71,7 +71,11 @@ export const PendulumLocationSchema = z.object({
 });
 
 export const WsEnvelopeSchema = z.discriminatedUnion("type", [
+  // node → gateway: one node's latest position
   z.object({ type: z.literal("PendulumLocationUpdate"), data: PendulumLocationSchema }),
+  // gateway → nodes: every node's latest position, in a single message
+  z.object({ type: z.literal("WorldSnapshot"), data: z.array(PendulumLocationSchema) }),
+  // both directions: a collision report
   z.object({ type: z.literal("PendulumCollisionUpdate"), data: CollisionSchema }),
 ]);
 

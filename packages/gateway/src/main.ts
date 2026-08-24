@@ -7,7 +7,14 @@ import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import { addControlRoutes } from "./api";
 import { startGatewayDebugLoop } from "./debug";
-import { countSent, lastWorldChangeAt, pendulumLocations, pendulumRestarts, simWsHandler } from "./wsHandler";
+import {
+  countSent,
+  lastWorldChangeAt,
+  pendulumLocations,
+  pendulumRestarts,
+  simWsHandler,
+  startLocationBroadcast,
+} from "./wsHandler";
 
 const app = new Hono();
 
@@ -66,6 +73,8 @@ app.get("/*", serveStatic({ path: join(UI_ROOT, "index.html") }));
 
 console.log(`Listing on 127.0.0.1:${RUNTIME_CONFIG.gatewayPort}`);
 
+// neighbour positions are pushed to sim nodes on a fixed simHz cadence (see wsHandler)
+startLocationBroadcast();
 startGatewayDebugLoop();
 
 serve({
