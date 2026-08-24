@@ -78,13 +78,10 @@ export async function configureNode(nodeId: number, patch: PendulumConfigPatch):
 }
 
 /**
- * A single frame from the gateway's live feed: where every bob is, plus the pending
- * auto-restart deadline (epoch ms) for any bob currently collided.
+ * A single frame from the gateway's live feed: where every bob is.
  */
 export interface FeedFrame {
   locations: Map<number, PendulumLocation>;
-  // nodeId -> wall-clock ms at which the collided node auto-restarts; the UI counts down to it.
-  restarts: Map<number, number>;
 }
 
 /** Connection state of the live feed socket, surfaced to the UI for a status indicator. */
@@ -101,8 +98,8 @@ export interface FeedHandle {
 
 /**
  * Subscribe to the gateway's live feed (`/api/ui_updates`). The gateway pushes a
- * `{ locations, restarts }` frame whenever the world changes; each frame we parse it
- * into `Map`s (dropping any entries that don't validate) and hand it to `onUpdate`.
+ * `{ locations }` frame whenever the world changes; each frame we parse it into a
+ * `Map` (dropping any entries that don't validate) and hand it to `onUpdate`.
  * The socket auto-reconnects if the gateway bounces. `onStatus` (optional) is called
  * whenever the connection state changes, so the UI can show a live indicator. Returns a
  * handle to unsubscribe or force an immediate reconnect.
@@ -157,10 +154,7 @@ export function subscribeLocations(
         return;
       }
       if (typeof raw !== "object" || raw === null || !("locations" in raw)) return;
-      const { locations: rawLocations, restarts: rawRestarts } = raw as {
-        locations: unknown;
-        restarts?: unknown;
-      };
+      const { locations: rawLocations } = raw as { locations: unknown };
 
       const locations = new Map<number, PendulumLocation>();
       if (typeof rawLocations === "object" && rawLocations !== null) {
@@ -170,14 +164,7 @@ export function subscribeLocations(
         }
       }
 
-      const restarts = new Map<number, number>();
-      if (typeof rawRestarts === "object" && rawRestarts !== null) {
-        for (const [id, at] of Object.entries(rawRestarts)) {
-          if (typeof at === "number") restarts.set(Number(id), at);
-        }
-      }
-
-      onUpdate({ locations, restarts });
+      onUpdate({ locations });
     };
 
     // An error (refused connection, dropped upgrade) doesn't always emit a clean

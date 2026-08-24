@@ -33,9 +33,8 @@ const fullConfig: fc.Arbitrary<PendulumConfig> = fc.record({
   wind: fc.double({ min: -10, max: 10, noNaN: true }),
 });
 
-// an arbitrary — but internally consistent — starting Sim. Any of the six statuses,
-// any config, any pendulum state. Collision is left null / generation 0 so the sim
-// is never "half-collided"; the command stream can drive it into a collided episode.
+// an arbitrary — but internally consistent — starting Sim. Any status, any config,
+// any pendulum state.
 const arbSim: fc.Arbitrary<Sim> = fc
   .record({
     config: fullConfig,
@@ -53,8 +52,6 @@ const arbSim: fc.Arbitrary<Sim> = fc
       pause: 0,
       resume: 0,
       stop: 0,
-      collision: 0,
-      restart: 0,
       configure: 0,
       tick: 0,
     },
@@ -63,13 +60,9 @@ const arbSim: fc.Arbitrary<Sim> = fc
       pause: 0,
       resume: 0,
       stop: 0,
-      collision: 0,
-      restart: 0,
       configure: 0,
       tick: 0,
     },
-    collision: null,
-    generation: 0,
   }));
 
 // realistic per-frame values for `tick`

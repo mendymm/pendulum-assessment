@@ -47,9 +47,6 @@ export function App() {
   // Live bob positions streamed from the gateway (keyed by nodeId); drives the
   // canvas so running pendulums actually swing.
   const [locations, setLocations] = useState<Map<number, PendulumLocation>>(() => new Map());
-  // Pending auto-restart deadlines (nodeId -> epoch ms) for collided bobs; drives the
-  // per-bob countdown. Empty whenever nothing is mid-collision.
-  const [restarts, setRestarts] = useState<Map<number, number>>(() => new Map());
   // Live-feed socket state for the debug indicator, plus a handle so the Reconnect
   // button can force an immediate reconnect.
   const [feedStatus, setFeedStatus] = useState<FeedStatus>("connecting");
@@ -57,7 +54,6 @@ export function App() {
   useEffect(() => {
     const handle = subscribeLocations((frame) => {
       setLocations(frame.locations);
-      setRestarts(frame.restarts);
     }, setFeedStatus);
     feedRef.current = handle;
     return () => {
@@ -245,7 +241,6 @@ export function App() {
           ref={canvasRef}
           pendulums={pendulums}
           locations={locations}
-          restarts={restarts}
           onViewChange={setView}
           onCursorChange={setCursor}
           onOpenConfig={openFromAnchor}

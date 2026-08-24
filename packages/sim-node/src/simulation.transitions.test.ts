@@ -9,15 +9,13 @@
  *
  * To reach a target status we never fabricate a `Sim` — we drive the *real* `createSim`
  * + `transition` from the initial "stopped" state along a declared graph of edges
- * (`EDGES`), found by BFS. NOTE: `restarting` and `countdown` are in the `SimStatus`
- * enum but `transition` never produces them, so no path exists and their samples fail
- * for now (to be fixed).
+ * (`EDGES`), found by BFS.
  */
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { type Collision, type NodeId, type SimStatus, SimStatusSchema } from "@pendulum/shared/src/types";
+import { type NodeId, type SimStatus, SimStatusSchema } from "@pendulum/shared/src/types";
 import { type Command, createSim, type Sim, transition } from "./simulation";
 
 const NODE_ID = 0 as NodeId;
@@ -59,19 +57,17 @@ const defineCommandStates = <const S extends CommandStates>(spec: S & ValidatePa
 const COMMAND_STATES = {
   pause: defineCommandStates({
     valid: ["running"],
-    rejected: ["paused", "stopped", "restarting", "countdown", "collided"],
+    rejected: ["paused", "stopped"],
   }),
   resume: defineCommandStates({
     valid: ["paused"],
-    rejected: ["running", "stopped", "restarting", "countdown", "collided"],
+    rejected: ["running", "stopped"],
   }),
 } satisfies Partial<Record<Command["type"], CommandStates>>;
 
 // ---------------------------------------------------------------------------
 // Reaching a status without faking the sim: a declared transition graph + BFS.
 // ---------------------------------------------------------------------------
-
-const A_COLLISION: Collision = { reportingNode: 1 as NodeId, with: 2 as NodeId, timestamp: 0 };
 
 // each edge is a real command that moves the sim from `from` to `to`. keep this the
 // minimal set needed to reach every status; BFS stitches them into a path.
@@ -84,7 +80,6 @@ interface Edge {
 const EDGES: readonly Edge[] = [
   { from: "stopped", command: { type: "start" }, to: "running" },
   { from: "running", command: { type: "pause" }, to: "paused" },
-  { from: "running", command: { type: "collision", collision: A_COLLISION }, to: "collided" },
 ];
 
 const INITIAL_STATUS = createSim(NODE_ID).status; // "stopped"

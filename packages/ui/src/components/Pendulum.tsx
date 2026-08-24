@@ -1,4 +1,3 @@
-import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
 import { bobRadius, type PendulumConfig, type PendulumLocation } from "@pendulum/shared/src/types";
 import { mocha } from "../theme";
 
@@ -51,13 +50,10 @@ export function Pendulum({
   geometry,
   color,
   ghost = false,
-  countdownMs,
 }: {
   geometry: PendulumGeometry;
   color: string;
   ghost?: boolean;
-  // ms until this bob auto-restarts after a collision; when > 0, draw a countdown on it.
-  countdownMs?: number;
 }) {
   const { anchorX, bobX, bobY, r } = geometry;
 
@@ -87,11 +83,6 @@ export function Pendulum({
         strokeWidth={ghost ? 2 : 1}
         vectorEffect="non-scaling-stroke"
       />
-      {/* Restart countdown: a red depleting ring + seconds left, shown only while a
-          restart is actually counting down. */}
-      {!ghost && countdownMs !== undefined && countdownMs > 0 && (
-        <CollisionCountdown cx={bobX} cy={bobY} r={r} ms={countdownMs} />
-      )}
       {/* Ghost label: mark this as the drop-off (launch) angle. Sized in world
           units relative to the bob so it scales with the ring. */}
       {ghost && (
@@ -111,52 +102,6 @@ export function Pendulum({
           </tspan>
         </text>
       )}
-    </g>
-  );
-}
-
-const RESTART_MS = RUNTIME_CONFIG.restartSec * 1000;
-
-/**
- * A depleting ring drawn around a bob plus the seconds remaining until restart, shown
- * while a restart is counting down. Sized in world (meter) units so it scales with the
- * bob and zoom.
- */
-function CollisionCountdown({ cx, cy, r, ms }: { cx: number; cy: number; r: number; ms: number }) {
-  const ringR = r * 1.3;
-  const circ = 2 * Math.PI * ringR;
-  const frac = Math.max(0, Math.min(1, ms / RESTART_MS)); // 1 at impact → 0 at restart
-  const stroke = r * 0.14;
-
-  return (
-    <g style={{ pointerEvents: "none", userSelect: "none" }}>
-      {/* Faint full ring as the track */}
-      <circle cx={cx} cy={cy} r={ringR} fill="none" stroke={mocha.surface1} strokeWidth={stroke} />
-      {/* Remaining arc, starting from the top (rotate -90°) and shrinking clockwise */}
-      <circle
-        cx={cx}
-        cy={cy}
-        r={ringR}
-        fill="none"
-        stroke={mocha.red}
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        strokeDasharray={`${circ * frac} ${circ}`}
-        transform={`rotate(-90 ${cx} ${cy})`}
-      />
-      {/* Seconds remaining, centered on the bob */}
-      <text
-        x={cx}
-        y={cy}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontSize={r * 0.9}
-        fontWeight={700}
-        fill={mocha.text}
-        style={{ fontVariantNumeric: "tabular-nums" }}
-      >
-        {(ms / 1000).toFixed(1)}
-      </text>
     </g>
   );
 }

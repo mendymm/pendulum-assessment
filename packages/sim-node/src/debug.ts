@@ -39,10 +39,10 @@ function angleGauge(angle: number, width = 21): string {
 
 // Compact multi-line dump of a snapshot for stdout debugging in the main loop.
 export function formatSnapshot(snap: SimSnapshot): string {
-  const { nodeId, status, config, posistion: pos, bobRadius, commandsCompleted, commandsRejected, generation } = snap;
+  const { nodeId, status, config, posistion: pos, bobRadius, commandsCompleted, commandsRejected } = snap;
   const deg = ((config.angle * 180) / Math.PI).toFixed(0);
   return [
-    `node ${nodeId} · ${status} · gen ${generation}`,
+    `node ${nodeId} · ${status}`,
     `  angle ${config.angle.toFixed(2)}rad (${deg}°) [${angleGauge(config.angle)}]  anchorX ${config.anchorX.toFixed(2)}m`,
     `  bob (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)})m  r ${bobRadius.toFixed(2)}m  len ${config.length}m  mass ${config.mass}kg  wind ${config.wind}N  g ${config.gravity}m/s²`,
     `  ✓ completed · ${formatCounts(commandsCompleted)}`,

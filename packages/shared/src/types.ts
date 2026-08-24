@@ -37,7 +37,7 @@ export const PendulumConfigSchema = PendulumConfigShape;
 // all optional, used in the patch request
 export const PendulumConfigPatchSchema = PendulumConfigShape.partial();
 
-export const SimStatusSchema = z.enum(["running", "paused", "stopped", "restarting", "countdown", "collided"]);
+export const SimStatusSchema = z.enum(["running", "paused", "stopped"]);
 
 export const PointSchema = z.object({
   x: z.number(),
@@ -52,7 +52,6 @@ export const SimSnapshotSchema = z.object({
   bobRadius: BobRadiusSchema,
   commandsCompleted: z.record(z.string(), z.number()),
   commandsRejected: z.record(z.string(), z.number()),
-  generation: z.number(),
 });
 
 export const CollisionSchema = z.object({
@@ -75,8 +74,6 @@ export const WsEnvelopeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("PendulumLocationUpdate"), data: PendulumLocationSchema }),
   // gateway → nodes: every node's latest position, in a single message
   z.object({ type: z.literal("WorldSnapshot"), data: z.array(PendulumLocationSchema) }),
-  // both directions: a collision report
-  z.object({ type: z.literal("PendulumCollisionUpdate"), data: CollisionSchema }),
 ]);
 
 export type BobRadius = z.infer<typeof BobRadiusSchema>;

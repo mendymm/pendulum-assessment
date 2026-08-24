@@ -1,7 +1,6 @@
 import { assertNever } from "@pendulum/shared";
 import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
 import { type PendulumLocation, parseWsEnvelope, type WsEnvelope } from "@pendulum/shared/src/types";
-import type { Mailbox } from "./mailbox";
 
 export type NeighborsLocation = Map<number, PendulumLocation>;
 export type SendWsMessage = (wsMsg: WsEnvelope) => void;
@@ -12,13 +11,9 @@ export type SendWsMessage = (wsMsg: WsEnvelope) => void;
 export const wsEventCounts: Record<WsEnvelope["type"], number> = {
   PendulumLocationUpdate: 0,
   WorldSnapshot: 0,
-  PendulumCollisionUpdate: 0,
 };
 
-export function connectToGateway(
-  nodeId: number,
-  inbox: Mailbox,
-): { neighbors: NeighborsLocation; sendWsMessage: SendWsMessage } {
+export function connectToGateway(nodeId: number): { neighbors: NeighborsLocation; sendWsMessage: SendWsMessage } {
   const url = `ws://127.0.0.1:${RUNTIME_CONFIG.gatewayPort}/api/ws?nodeId=${nodeId}`;
 
   // latest known positions of the other nodes, keyed by nodeId
@@ -59,12 +54,6 @@ export function connectToGateway(
           // single update is still safe to fold into our neighbour view.
           neighbors.set(wsEnvelope.data.nodeId, wsEnvelope.data);
           return;
-        case "PendulumCollisionUpdate": {
-          inbox.push({
-            command: { type: "collision", collision: wsEnvelope.data },
-          });
-          return;
-        }
         default:
           assertNever(wsEnvelope);
       }

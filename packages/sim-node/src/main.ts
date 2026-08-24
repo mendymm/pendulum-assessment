@@ -26,7 +26,7 @@ async function startServer(nodeId: NodeId) {
   addControlPlaneRoutes(app, inbox, () => sim);
   serve({ fetch: app.fetch, hostname: "127.0.0.1", port: listingPort });
 
-  const { neighbors, sendWsMessage } = connectToGateway(nodeId, inbox);
+  const { neighbors, sendWsMessage } = connectToGateway(nodeId);
 
   // the only writer of `sim` during operation
   const consume = async () => {
@@ -43,7 +43,7 @@ async function startServer(nodeId: NodeId) {
 
       if (out.result === "ok") {
         // execute side-effects of the state machine
-        executeEffects(out.effects, sendWsMessage, inbox);
+        executeEffects(out.effects, sendWsMessage);
       }
       reply?.(out);
     }

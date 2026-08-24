@@ -7,13 +7,7 @@
  * gets shrunk down to the minimal failing sequence.
  */
 
-import {
-  type BobRadius,
-  type Collision,
-  type NodeId,
-  type PendulumLocation,
-  SimStatusSchema,
-} from "@pendulum/shared/src/types";
+import { type BobRadius, type NodeId, type PendulumLocation, SimStatusSchema } from "@pendulum/shared/src/types";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { type Command, createSim, transition } from "../simulation";
@@ -21,7 +15,7 @@ import { configPatch } from "./testSupport";
 
 const nodeId = (n: number) => n as NodeId;
 
-// a neighbor in our snapshot of the world, used by `tick`'s collision check
+// a neighbor in our snapshot of the world, carried on each `tick`
 const pendulumLocation: fc.Arbitrary<PendulumLocation> = fc.record({
   nodeId: fc.integer({ min: 0, max: 100 }).map(nodeId),
   bobRadius: fc.double({ min: 0.1, max: 5, noNaN: true }) as fc.Arbitrary<BobRadius>,
@@ -36,15 +30,8 @@ const pendulumLocation: fc.Arbitrary<PendulumLocation> = fc.record({
 const dt = fc.double({ min: 0, max: 0.1, noNaN: true });
 const worldState = fc.array(pendulumLocation, { maxLength: 5 });
 
-// wall-clock ms; the shell stamps each tick with it, and a collision carries it too
+// wall-clock ms; the shell stamps each tick with it
 const now = fc.integer({ min: 0, max: 1_000_000 });
-
-// a collision report: who saw it, who they hit, and when
-const collision: fc.Arbitrary<Collision> = fc.record({
-  reportingNode: fc.integer({ min: 0, max: 100 }).map(nodeId),
-  with: fc.integer({ min: 0, max: 100 }).map(nodeId),
-  timestamp: now,
-});
 
 // an arbitrary command spanning every variant of the union
 const command: fc.Arbitrary<Command> = fc.oneof(
@@ -52,7 +39,6 @@ const command: fc.Arbitrary<Command> = fc.oneof(
   fc.constant<Command>({ type: "pause" }),
   fc.constant<Command>({ type: "resume" }),
   fc.constant<Command>({ type: "stop" }),
-  collision.map((collision) => ({ type: "collision", collision }) as Command),
   configPatch.map((config) => ({ type: "configure", config }) as Command),
   fc.tuple(dt, worldState, now).map(([dt, worldState, now]) => ({ type: "tick", dt, worldState, now }) as Command),
 );

@@ -31,7 +31,7 @@ export const configPatch: fc.Arbitrary<PendulumConfigPatch> = fc.record(
   { requiredKeys: [] },
 );
 
-// every possible sim status: running | paused | stopped | restarting | countdown
+// every possible sim status: running | paused | stopped
 export const status: fc.Arbitrary<SimStatus> = fc.constantFrom(...SimStatusSchema.options);
 
 // a config with an arbitrary launch angle; other fields are left at their defaults

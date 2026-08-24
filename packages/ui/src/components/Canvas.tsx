@@ -75,9 +75,6 @@ interface CanvasProps {
   // Live bob positions from the gateway feed, keyed by nodeId. A node present here
   // renders at its swinging position; absent nodes fall back to config geometry.
   locations?: Map<number, PendulumLocation>;
-  // Pending auto-restart deadlines (nodeId -> epoch ms) for collided bobs; each renders
-  // a live countdown on the bob until the deadline passes.
-  restarts?: Map<number, number>;
   onViewChange?: (view: CameraView) => void;
   onCursorChange?: (cursor: WorldPoint | null) => void;
   onOpenConfig?: (nodeId: number, e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -99,7 +96,6 @@ export const Canvas = memo(
     {
       pendulums,
       locations,
-      restarts,
       onViewChange,
       onCursorChange,
       onOpenConfig,
@@ -118,27 +114,6 @@ export const Canvas = memo(
     const cameraRef = useRef(camera);
     cameraRef.current = camera;
     const dragRef = useRef<{ startX: number; startY: number; camX: number; camY: number } | null>(null);
-
-    // Wall-clock used to compute the live countdown. While a countdown is running we
-    // re-render every animation frame, because the gateway feed goes quiet once nothing
-    // is moving (paused / all collided) — so the ticking has to be driven client-side.
-    const [now, setNow] = useState(() => Date.now());
-    // Global restart countdown: the soonest pending restart across all bobs. When any
-    // bob is mid-collision, every bob counts down to this same deadline; when none are,
-    // it's undefined and no rings render.
-    const globalRestartAt = restarts && restarts.size > 0 ? Math.min(...restarts.values()) : undefined;
-    const countdownMs = globalRestartAt !== undefined ? globalRestartAt - now : undefined;
-    const hasCountdown = globalRestartAt !== undefined;
-    useEffect(() => {
-      if (!hasCountdown) return;
-      let raf = 0;
-      const tick = () => {
-        setNow(Date.now());
-        raf = requestAnimationFrame(tick);
-      };
-      raf = requestAnimationFrame(tick);
-      return () => cancelAnimationFrame(raf);
-    }, [hasCountdown]);
 
     // Frame the fixed DEFAULT_VIEW until the user takes control of the camera.
     // (Re-fits across the transient sizes emitted while the layout settles and on
@@ -321,15 +296,13 @@ export const Canvas = memo(
 
           {/* Pendulums: solid bob at the live position, plus a faint ghost at the
               launch (drop) angle whenever the sim is reporting a live position —
-              so you can see where a running bob will relaunch from.
-              The restart countdown is global: as soon as any bob is mid-collision,
-              every bob shows the same synchronized countdown (to the soonest restart). */}
+              so you can see where a running bob will relaunch from. */}
           {pendulums.map((p) => (
             <Fragment key={p.nodeId}>
               {locations?.has(p.nodeId) && (
                 <Pendulum geometry={pendulumGeometry(p.config)} color={bobColor(p.nodeId)} ghost />
               )}
-              <Pendulum geometry={liveGeomFor(p)} color={bobColor(p.nodeId)} countdownMs={countdownMs} />
+              <Pendulum geometry={liveGeomFor(p)} color={bobColor(p.nodeId)} />
             </Fragment>
           ))}
         </svg>

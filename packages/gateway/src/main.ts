@@ -7,14 +7,7 @@ import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import { addControlRoutes } from "./api";
 import { startGatewayDebugLoop } from "./debug";
-import {
-  countSent,
-  lastWorldChangeAt,
-  pendulumLocations,
-  pendulumRestarts,
-  simWsHandler,
-  startLocationBroadcast,
-} from "./wsHandler";
+import { countSent, lastWorldChangeAt, pendulumLocations, simWsHandler, startLocationBroadcast } from "./wsHandler";
 
 const app = new Hono();
 
@@ -34,7 +27,6 @@ app.get(
     const currentFrame = () =>
       JSON.stringify({
         locations: Object.fromEntries(pendulumLocations),
-        restarts: Object.fromEntries(pendulumRestarts),
       });
 
     return {
@@ -47,11 +39,9 @@ app.get(
         lastFrameSentAt = Date.now();
 
         timer = setInterval(() => {
-          // Only push when the world actually changed (a new location, or a collision
-          // countdown appearing/clearing) since our last send. While the sim is paused
-          // or every pendulum has collided, nothing changes, so we go quiet instead of
-          // spamming the UI with the same frame at uiUpdateHz. The UI animates a pending
-          // countdown itself from the restart deadline, so it stays live without us.
+          // Only push when the world actually changed (a new location) since our last
+          // send. While the sim is paused or stopped, nothing changes, so we go quiet
+          // instead of spamming the UI with the same frame at uiUpdateHz.
           if (lastWorldChangeAt <= lastFrameSentAt) return;
           ws.send(currentFrame());
           countSent("uiFrame");
