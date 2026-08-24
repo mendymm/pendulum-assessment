@@ -77,7 +77,14 @@ function render(processes: ManagedProcess[]) {
   process.stdout.write("\x1b[2J\x1b[H");
   process.stdout.write(`pendulum simulation — ${new Date().toISOString()}\n\n`);
 
-  for (const proc of processes) {
+  // render the gateway below all other nodes
+  const ordered = [...processes].sort((a, b) => {
+    if (a.label === "gateway") return 1;
+    if (b.label === "gateway") return -1;
+    return 0;
+  });
+
+  for (const proc of ordered) {
     process.stdout.write(`[${proc.label}] (pid ${proc.child.pid})\n`);
     const lines = proc.recent.length > 0 ? proc.recent : ["<no output yet>"];
     for (const line of lines) {
