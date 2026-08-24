@@ -87,20 +87,51 @@ export interface FeedFrame {
   restarts: Map<number, number>;
 }
 
+/** Connection state of the live feed socket, surfaced to the UI for a status indicator. */
+export type FeedStatus = "connecting" | "open" | "closed";
+
+/** Handle returned by `subscribeLocations`: tear the feed down, or force it to reconnect now. */
+export interface FeedHandle {
+  // Stop reconnecting and close the socket for good.
+  unsubscribe: () => void;
+  // Drop the current socket (whatever its state) and reconnect immediately, skipping any
+  // pending retry backoff. Safe to call at any time.
+  reconnect: () => void;
+}
+
 /**
  * Subscribe to the gateway's live feed (`/api/ui_updates`). The gateway pushes a
  * `{ locations, restarts }` frame whenever the world changes; each frame we parse it
  * into `Map`s (dropping any entries that don't validate) and hand it to `onUpdate`.
- * The socket auto-reconnects if the gateway bounces. Returns an unsubscribe function
- * that stops reconnecting and closes the socket.
+ * The socket auto-reconnects if the gateway bounces. `onStatus` (optional) is called
+ * whenever the connection state changes, so the UI can show a live indicator. Returns a
+ * handle to unsubscribe or force an immediate reconnect.
  */
-export function subscribeLocations(onUpdate: (frame: FeedFrame) => void): () => void {
+export function subscribeLocations(
+  onUpdate: (frame: FeedFrame) => void,
+  onStatus?: (status: FeedStatus) => void,
+): FeedHandle {
   let closed = false;
   let socket: WebSocket | null = null;
-  let reconnect: ReturnType<typeof setTimeout> | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
   const connect = () => {
     if (closed) return;
+
+    // Cancel any pending retry and cleanly detach the previous socket so its onclose
+    // can't schedule a competing reconnect — this makes connect() safe to call directly
+    // (manual reconnect) as well as from the retry timer.
+    clearTimeout(retryTimer);
+    if (socket) {
+      socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null;
+      try {
+        socket.close();
+      } catch {
+        // already closing/closed
+      }
+    }
+
+    onStatus?.("connecting");
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     socket = new WebSocket(`${proto}//${window.location.host}/api/ui_updates`);
 
@@ -113,7 +144,10 @@ export function subscribeLocations(onUpdate: (frame: FeedFrame) => void): () => 
       if (socket?.readyState === WebSocket.CONNECTING) socket.close();
     }, CONNECT_TIMEOUT_MS);
 
-    socket.onopen = () => clearTimeout(watchdog);
+    socket.onopen = () => {
+      clearTimeout(watchdog);
+      onStatus?.("open");
+    };
 
     socket.onmessage = (evt) => {
       let raw: unknown;
@@ -153,16 +187,21 @@ export function subscribeLocations(onUpdate: (frame: FeedFrame) => void): () => 
     // The gateway (or a node) may bounce; keep retrying until we're unsubscribed.
     socket.onclose = () => {
       clearTimeout(watchdog);
-      if (!closed) reconnect = setTimeout(connect, RECONNECT_MS);
+      if (closed) return;
+      onStatus?.("closed");
+      retryTimer = setTimeout(connect, RECONNECT_MS);
     };
   };
 
   connect();
 
-  return () => {
-    closed = true;
-    clearTimeout(reconnect);
-    socket?.close();
+  return {
+    unsubscribe: () => {
+      closed = true;
+      clearTimeout(retryTimer);
+      socket?.close();
+    },
+    reconnect: connect,
   };
 }
 

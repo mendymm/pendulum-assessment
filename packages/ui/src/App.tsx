@@ -8,7 +8,15 @@ import {
   type SimSnapshot,
 } from "@pendulum/shared/src/types";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { configureNode, controlAll, fetchAllSnapshots, randomizeAll, subscribeLocations } from "./api";
+import {
+  configureNode,
+  controlAll,
+  type FeedHandle,
+  type FeedStatus,
+  fetchAllSnapshots,
+  randomizeAll,
+  subscribeLocations,
+} from "./api";
 import type { BobPose } from "./components/BobHandle";
 import { type CameraView, Canvas, type CanvasHandle, type WorldPoint } from "./components/Canvas";
 import { ConfigBox } from "./components/ConfigBox";
@@ -42,14 +50,21 @@ export function App() {
   // Pending auto-restart deadlines (nodeId -> epoch ms) for collided bobs; drives the
   // per-bob countdown. Empty whenever nothing is mid-collision.
   const [restarts, setRestarts] = useState<Map<number, number>>(() => new Map());
-  useEffect(
-    () =>
-      subscribeLocations((frame) => {
-        setLocations(frame.locations);
-        setRestarts(frame.restarts);
-      }),
-    [],
-  );
+  // Live-feed socket state for the debug indicator, plus a handle so the Reconnect
+  // button can force an immediate reconnect.
+  const [feedStatus, setFeedStatus] = useState<FeedStatus>("connecting");
+  const feedRef = useRef<FeedHandle | null>(null);
+  useEffect(() => {
+    const handle = subscribeLocations((frame) => {
+      setLocations(frame.locations);
+      setRestarts(frame.restarts);
+    }, setFeedStatus);
+    feedRef.current = handle;
+    return () => {
+      handle.unsubscribe();
+      feedRef.current = null;
+    };
+  }, []);
 
   const selectedConfig = selected ? pendulums.find((p) => p.nodeId === selected.nodeId)?.config : undefined;
 
@@ -219,6 +234,7 @@ export function App() {
           >
             <DebugPair title="center" x={view?.centerX ?? null} y={view?.centerY ?? null} />
             <DebugPair title="cursor" x={cursor?.x ?? null} y={cursor?.y ?? null} />
+            <FeedStatusPair status={feedStatus} onReconnect={() => feedRef.current?.reconnect()} />
           </div>
         </div>
       </header>
@@ -264,6 +280,40 @@ function DebugPair({ title, x, y }: { title: string; x: number | null; y: number
       </div>
       <CoordRow axis="x" value={x} />
       <CoordRow axis="y" value={y} />
+    </div>
+  );
+}
+
+/** Live-feed connection indicator: a colored dot + label, with a Reconnect button. */
+function FeedStatusPair({ status, onReconnect }: { status: FeedStatus; onReconnect: () => void }) {
+  const color = status === "open" ? mocha.green : status === "connecting" ? mocha.yellow : mocha.red;
+  return (
+    <div>
+      <div style={{ color: mocha.overlay1, fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        feed
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.15rem" }}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, flex: "0 0 auto" }} />
+        <span style={{ display: "inline-block", width: "10ch", whiteSpace: "nowrap", color: mocha.subtext1 }}>
+          {status}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onReconnect}
+        style={{
+          marginTop: "0.35rem",
+          padding: "0.15rem 0.5rem",
+          fontSize: "0.7rem",
+          color: mocha.text,
+          background: mocha.surface0,
+          border: `1px solid ${mocha.surface1}`,
+          borderRadius: 5,
+          cursor: "pointer",
+        }}
+      >
+        Reconnect
+      </button>
     </div>
   );
 }
