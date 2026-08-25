@@ -171,6 +171,13 @@ export const simInState = (target: SimStatus): Sim => {
   }, createSim(NODE_ID));
 };
 
+// a running sim whose bob has swung off its launch angle and carries non-zero velocity —
+// the realistic starting point for asserting how pause/stop/resume/tick treat live motion.
+export const movingSim = (): Sim => {
+  const running = transition(createSim(NODE_ID), { type: "start" }).sim;
+  return transition(running, { type: "tick", dt: 0.5, worldState: [], now: 0 }).sim;
+};
+
 // ---------------------------------------------------------------------------
 // Counter + core-state helpers.
 // ---------------------------------------------------------------------------

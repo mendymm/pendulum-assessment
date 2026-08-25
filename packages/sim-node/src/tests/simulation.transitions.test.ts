@@ -37,8 +37,6 @@ import {
   simInState,
 } from "./testSupport";
 
-fc.configureGlobal({ ...fc.readConfigureGlobal(), ...{ numRuns: 100 } });
-
 const entries = Object.entries(COMMAND_STATES) as [Command["type"], CommandStates][];
 
 // one `it` per (command, status): applying the command from that status yields the
