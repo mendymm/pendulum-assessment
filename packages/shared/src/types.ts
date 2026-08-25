@@ -37,7 +37,13 @@ export const PendulumConfigSchema = PendulumConfigShape;
 // all optional, used in the patch request
 export const PendulumConfigPatchSchema = PendulumConfigShape.partial();
 
-export const SimStatusSchema = z.enum(["running", "paused", "stopped"]);
+// "restarting" is the halted state a node sits in during a collision-restart episode: not
+// ticking, waiting for the gateway's `restart` command before it relaunches from config.angle.
+export const SimStatusSchema = z.enum(["running", "paused", "stopped", "restarting"]);
+
+// monotonic id the gateway assigns to each collision-restart episode. Travels on the wire so
+// the gateway can match acks to the current barrier and the UI can label the countdown.
+export const EpisodeSchema = z.number().nonnegative();
 
 export const PointSchema = z.object({
   x: z.number(),
@@ -77,6 +83,19 @@ export const CommandSchema = z.discriminatedUnion("type", [
     worldState: z.array(PendulumLocationSchema),
     now: z.number(),
   }),
+
+  // --- collision-restart protocol commands (driven by gateway WS messages / a local timer) ---
+
+  // gateway told us a restart episode has begun (STOP + join the barrier): halt and ack.
+  // valid from any status so a paused/stopped-but-connected node still participates.
+  z.object({ type: z.literal("haltForRestart"), episode: EpisodeSchema }),
+
+  // gateway's barrier completed: schedule our relaunch for the absolute instant `at`.
+  // only meaningful while restarting; a stale one from another status is a no-op.
+  z.object({ type: z.literal("restart"), episode: EpisodeSchema, at: z.number() }),
+
+  // the scheduled relaunch instant arrived: leave `restarting` and swing again from config.
+  z.object({ type: z.literal("relaunch"), episode: EpisodeSchema }),
 ]);
 export type Command = z.infer<typeof CommandSchema>;
 
@@ -104,6 +123,12 @@ export const CollisionSchema = z.object({
   timestamp: z.number(),
 });
 
+// node → gateway: acknowledgement of a restart episode (the barrier participation token).
+export const CollisionAckSchema = z.object({
+  nodeId: NodeIdSchema,
+  episode: EpisodeSchema,
+});
+
 // websocket message types
 
 export const WsEnvelopeSchema = z.discriminatedUnion("type", [
@@ -111,6 +136,16 @@ export const WsEnvelopeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("PendulumLocationUpdate"), data: PendulumLocationSchema }),
   // gateway → nodes: every node's latest position, in a single message
   z.object({ type: z.literal("WorldSnapshot"), data: z.array(PendulumLocationSchema) }),
+
+  // --- collision-restart barrier (star topology, gateway = coordinator) ---
+  // node → gateway: "I hit someone." Opens a restart episode (ignored if one is in flight).
+  z.object({ type: z.literal("collisionDetected"), data: CollisionSchema }),
+  // gateway → nodes: STOP + begin the handshake for this episode.
+  z.object({ type: z.literal("collisionInducedRestart"), episode: EpisodeSchema }),
+  // node → gateway: this node has halted and is part of the barrier for `episode`.
+  z.object({ type: z.literal("collisionAck"), data: CollisionAckSchema }),
+  // gateway → nodes: barrier done — relaunch at the absolute instant `at`.
+  z.object({ type: z.literal("restart"), episode: EpisodeSchema, at: z.number() }),
 ]);
 
 export type CommandCounts = z.infer<typeof CommandCountsSchema>;
@@ -129,6 +164,8 @@ export type SimSnapshot = z.infer<typeof SimSnapshotSchema>;
 export type WsEnvelope = z.infer<typeof WsEnvelopeSchema>;
 export type PendulumLocation = z.infer<typeof PendulumLocationSchema>;
 export type Collision = z.infer<typeof CollisionSchema>;
+export type CollisionAck = z.infer<typeof CollisionAckSchema>;
+export type Episode = z.infer<typeof EpisodeSchema>;
 
 export function defaultPendulumConfig(nodeId: number): PendulumConfig {
   return PendulumConfigSchema.parse({
