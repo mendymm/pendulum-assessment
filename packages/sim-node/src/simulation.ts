@@ -16,8 +16,14 @@ import {
   type SimSnapshot,
   type SimStatus,
 } from "@pendulum/shared/src/types";
+import { execConfigure } from "./cmd_impl/execConfigure";
+import { execPause } from "./cmd_impl/execPause";
+import { execResume } from "./cmd_impl/execResume";
+import { execStart } from "./cmd_impl/execStart";
+import { execStop } from "./cmd_impl/execStop";
+import { execTick } from "./cmd_impl/execTick";
 import type { NeighborsLocation } from "./gatewayWsConn";
-import { type PendulumState, step } from "./pendulum";
+import type { PendulumState } from "./pendulum";
 
 export interface Sim {
   readonly nodeId: NodeId;
@@ -26,6 +32,7 @@ export interface Sim {
   readonly pendulumState: PendulumState;
   readonly commandsCompleted: CommandCounts;
   readonly commandsRejected: CommandCounts;
+  readonly commandsNoop: CommandCounts;
 }
 
 export type Command =
@@ -60,7 +67,8 @@ export interface Rejection {
 
 export type Outcome =
   | { result: "ok"; sim: Sim; effects: Effect[] }
-  | { result: "rejected"; sim: Sim; rejection: Rejection };
+  | { result: "rejected"; sim: Sim; rejection: Rejection }
+  | { result: "noop"; sim: Sim };
 
 // how many commands of each type we've completed/rejected. same style as the WS
 // event tally: a map keyed by the union of command types, every key present at 0.
@@ -93,20 +101,28 @@ export function createSim(nodeId: NodeId): Sim {
     status: "stopped",
     commandsCompleted: zeroCounts(),
     commandsRejected: zeroCounts(),
+    commandsNoop: zeroCounts(),
   };
 }
 
-const ok = (nextSim: Sim, command: Command, effects: Effect[] = []): Outcome => ({
+export const ok = (nextSim: Sim, command: Command, effects: Effect[] = []): Outcome => ({
   result: "ok",
   sim: { ...nextSim, commandsCompleted: bumpCount(nextSim.commandsCompleted, command.type) },
   effects,
 });
 
-const reject = (nextSim: Sim, command: Command, reason: string): Outcome => ({
+export const noop = (nextSim: Sim, command: Command): Outcome => ({
+  result: "noop",
+  sim: { ...nextSim, commandsNoop: bumpCount(nextSim.commandsNoop, command.type) },
+});
+
+export const reject = (nextSim: Sim, command: Command, reason: string): Outcome => ({
   result: "rejected",
   sim: { ...nextSim, commandsRejected: bumpCount(nextSim.commandsRejected, command.type) },
   rejection: { command, from: nextSim.status, reason },
 });
+
+export type CommandOf<T extends Command["type"]> = Extract<Command, { type: T }>;
 
 // This is the simulation, expressed as a pure function
 //
@@ -114,61 +130,17 @@ const reject = (nextSim: Sim, command: Command, reason: string): Outcome => ({
 export function transition(sim: Sim, command: Command): Outcome {
   switch (command.type) {
     case "start":
-      // a manual start comes back fresh: relaunch from config.angle
-      return ok(
-        {
-          ...sim,
-          pendulumState: { angle: sim.config.angle, angularVelocity: 0 },
-          status: "running",
-        },
-        command,
-      );
-
+      return execStart(sim, command);
     case "pause":
-      return sim.status === "running" ? ok({ ...sim, status: "paused" }, command) : reject(sim, command, "not running");
-
+      return execPause(sim, command);
     case "resume":
-      return sim.status === "paused" ? ok({ ...sim, status: "running" }, command) : reject(sim, command, "not paused");
-
+      return execResume(sim, command);
     case "stop":
-      // freeze in place: keep the current angle, just kill the velocity.
-      // (start relaunches from config.angle.)
-      return sim.status === "stopped"
-        ? reject(sim, command, "already stopped")
-        : ok(
-            {
-              ...sim,
-              status: "stopped",
-              pendulumState: { ...sim.pendulumState, angularVelocity: 0 },
-            },
-            command,
-          );
-
-    case "configure": {
-      const config = { ...sim.config, ...command.config };
-      // changing the launch angle drops the bob from rest, so kill any velocity
-      const angleChanged = command.config.angle !== undefined && command.config.angle !== sim.config.angle;
-      const pendulumState = angleChanged
-        ? { angularVelocity: 0, angle: command.config.angle ?? sim.pendulumState.angle }
-        : sim.pendulumState;
-      // const pendulumState = angleChanged ? { ...sim.pendulumState, angularVelocity: 0, } : sim.pendulumState;
-      return ok({ ...sim, config, pendulumState }, command);
-    }
-
-    case "tick": {
-      if (sim.status !== "running") return reject(sim, command, "not running");
-      const stepped = { ...sim, pendulumState: step(sim.pendulumState, sim.config, command.dt) };
-      const reportLocation: Effect = {
-        type: "reportLocation",
-        data: {
-          nodeId: sim.nodeId,
-          bobRadius: bobRadius(sim.config.mass),
-          anchorX: sim.config.anchorX,
-          posistion: posistion(stepped),
-        },
-      };
-      return ok(stepped, command, [reportLocation]);
-    }
+      return execStop(sim, command);
+    case "configure":
+      return execConfigure(sim, command);
+    case "tick":
+      return execTick(sim, command);
   }
 }
 
