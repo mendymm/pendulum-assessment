@@ -19,6 +19,10 @@ export function execStop(sim: Sim, cmd: CommandOf<"stop">): Outcome {
       return frozen();
     case "paused":
       return frozen();
+    case "restarting":
+      // escape hatch: stopping aborts a pending restart. The scheduled `relaunch` will
+      // find us stopped and no-op, so nothing relaunches us.
+      return frozen();
     case "stopped":
       return reject(sim, cmd, "already stopped");
     default:

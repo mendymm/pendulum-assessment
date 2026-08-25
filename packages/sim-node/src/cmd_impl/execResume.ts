@@ -9,6 +9,8 @@ export function execResume(sim: Sim, cmd: CommandOf<"resume">): Outcome {
       return ok({ ...sim, status: "running" }, cmd);
     case "stopped":
       return reject(sim, cmd, "can't resume stoped sim, hit start instead");
+    case "restarting":
+      return reject(sim, cmd, "can't resume mid-restart, wait for the countdown");
     default:
       assertNever(sim.status);
   }

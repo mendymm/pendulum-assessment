@@ -9,6 +9,8 @@ export function execPause(sim: Sim, cmd: CommandOf<"pause">): Outcome {
       return reject(sim, cmd, "not running");
     case "stopped":
       return reject(sim, cmd, "not running");
+    case "restarting":
+      return reject(sim, cmd, "not running");
     default:
       assertNever(sim.status);
   }

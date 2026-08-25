@@ -7,6 +7,8 @@ export function execStart(sim: Sim, cmd: CommandOf<"start">): Outcome {
       return reject(sim, cmd, "sim is already started");
     case "paused":
       return reject(sim, cmd, "can't start a paused sim, hit resume instead");
+    case "restarting":
+      return reject(sim, cmd, "can't start mid-restart, wait for the countdown");
     case "stopped":
       return ok(
         {
