@@ -40,7 +40,7 @@ Open the web-ui at <http://127.0.0.1:8000>
 
 # Gateway
 
-The gateway is the only way for the UI to control the sim nodes, and is responsible for sending update to the UI
+The gateway is the only way for the UI to control the sim nodes, and is responsible for sending updates to the UI
 with the latest pendulum locations.
 
 # Simulation Node (sim-node)
@@ -66,7 +66,7 @@ type Outcome =
 function transition(sim: Sim, command: Command): Outcome
 ```
 
-The simulation is split into a *shell* and a *core*. The *core* is a pure state machine, relying only on it's inputs, and is 100% deterministic. And the *shell* is the rest of the program.
+The simulation is split into a *shell* and a *core*. The *core* is a pure state machine, relying only on its inputs, and is 100% deterministic. And the *shell* is the rest of the program.
 
 The *shell* can further be split into 2 main components
 
@@ -76,7 +76,7 @@ The *shell* can further be split into 2 main components
 There are 3 "kinds" of *producers*
 
 1. An HTTP control plane, who emit life-cycle events (`start`, `stop`, etc.), and configuration events who change the parameters of a running simulation.
-2. A ws listener, who listen's for broadcast messages from other simulations.
+2. A ws listener, who listens for broadcast messages from other simulations.
 3. A timer, who sends out the `tick` command every `N = SimUpdateHz` (which in development I arbitrarily set to 120Hz)
 
 
@@ -89,11 +89,11 @@ Modeling the simulation like this has 2 main advantages for me
 Since the simulation is a state machine, and each time we `transition` the state machine we need to discard the old sim state, and save the new sim state.
 And having 3 places who arbitrarily modify a global `sim` variable felt like it would get out of hand, I opted for an in-memory queue approach.
 
-The `transition` function can reject a command. For example, calling `pause` when the simulation is not in it's `running` state is incorrect, and the `transition` function returns a `rejection`.
+The `transition` function can reject a command. For example, calling `pause` when the simulation is not in its `running` state is incorrect, and the `transition` function returns a `rejection`.
 
 And you can imagine how if the sim gets a `pause` command over HTTP while the `status` is not `running`, we will be unable to return the `rejection` as an HTTP response.
 
-The solution is kinda annoying, but it still works. The mailbox holds `Envelope`'s, and each envelope as an optional reply callback, allowing the outcome to be communicated back to the HTTP handler, and back to the user who called the endpoint.
+The solution is kinda annoying, but it still works. The mailbox holds `Envelope`'s, and each envelope has an optional reply callback, allowing the outcome to be communicated back to the HTTP handler, and back to the user who called the endpoint.
 ```ts
 export interface Envelope {
   command: Command;
@@ -119,11 +119,11 @@ type Command =
   | { type: "tick"; dt: number; worldState: BobPosition[]; now: number };
 ```
 
-The `tick` command's job it to compute the next state of the pendulum, and once reaching the next state, check for a collision with **any** node (not just nearest neighbor).
+The `tick` command's job is to compute the next state of the pendulum, and once reaching the next state, check for a collision with **any** node (not just nearest neighbor).
 
 The `dt: number` is used in the pendulum's physics to advance the pendulum by a specific amount of Delta Time.
 So at a simulation speed of 120Hz, each tick of the simulation will advance the pendulum by `1 / 120 = 0.0083 seconds`.
-The timer will calculate the "real" `DT` for tick, taking into account that since the last time it sent a `tick` event more/less time than `DT` might have passed. It uses standard Delta Time correction logic which take into account potential clock drift, or other parts of the event loop taking executing first, etc.
+The timer will calculate the "real" `DT` for tick, taking into account that since the last time it sent a `tick` event more/less time than `DT` might have passed. It uses standard Delta Time correction logic which takes into account potential clock drift, or other parts of the event loop executing first, etc.
 
 The `worldState` is where this gets a little interesting. Since this simulation is modeled as a state machine, how can the simulation know about its neighbors? Considering that we don't want the simulation reading any global state not passed into it via a command.
 Each sim maintains a ws connection with the gateway, which it uses to send location updates (on each tick), and collision notifications.
