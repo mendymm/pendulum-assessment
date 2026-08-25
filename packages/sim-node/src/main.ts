@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { assertNever } from "@pendulum/shared";
 import { RUNTIME_CONFIG } from "@pendulum/shared/src/config";
 import { type NodeId, NodeIdSchema } from "@pendulum/shared/src/types";
 import { Hono } from "hono";
@@ -34,18 +35,25 @@ async function startServer(nodeId: NodeId) {
     while (true) {
       iterCount++;
       const { command, reply } = await inbox.recv();
-
-      // transition the state machine 1 step
-      const out = transition(sim, command);
-      sim = out.sim;
-
       debugSimState(iterCount, sim, command.type);
 
-      if (out.result === "ok") {
-        // execute side-effects of the state machine
-        executeEffects(out.effects, sendWsMessage);
+      // transition the state machine 1 step
+      const outcome = transition(sim, command);
+      sim = outcome.sim;
+
+      switch (outcome.result) {
+        case "ok":
+          executeEffects(outcome.effects, sendWsMessage);
+          break;
+        case "rejected":
+          break;
+        case "noop":
+          break;
+        default:
+          assertNever(outcome);
       }
-      reply?.(out);
+
+      reply?.(outcome);
     }
   };
 
