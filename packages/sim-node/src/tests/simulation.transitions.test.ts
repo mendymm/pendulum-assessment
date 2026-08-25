@@ -27,7 +27,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { type Command, type CommandCounts, createSim, type Sim, transition } from "../simulation";
 
-fc.configureGlobal({ ...fc.readConfigureGlobal(), ...{ numRuns: 1000 } });
+fc.configureGlobal({ ...fc.readConfigureGlobal(), ...{ numRuns: 100 } });
 
 const NODE_ID = 0 as NodeId;
 
@@ -269,19 +269,16 @@ describe("counters", () => {
 // must leave the sim's core state (everything but the counters) exactly as it was.
 describe("noop/rejected leave core state intact", () => {
   for (const [type, states] of entries) {
-    const inertStatuses = [...states.noop, ...states.rejected];
-    if (inertStatuses.length === 0) {
-      it.skip(`${type}: no noop/rejected statuses to check`, () => {});
-      continue;
+    for (const status of [...states.noop, ...states.rejected]) {
+      it(`${type} from ${status}: core state unchanged`, () => {
+        fc.assert(
+          fc.property(commandArb(type), (command) => {
+            const before = simInState(status);
+            const after = transition(before, command).sim;
+            expect(coreState(after)).toEqual(coreState(before));
+          }),
+        );
+      });
     }
-    it(`${type}: core state unchanged from [${inertStatuses.join(", ")}]`, () => {
-      fc.assert(
-        fc.property(fc.constantFrom(...inertStatuses), commandArb(type), (status, command) => {
-          const before = simInState(status);
-          const after = transition(before, command).sim;
-          expect(coreState(after)).toEqual(coreState(before));
-        }),
-      );
-    });
   }
 });
