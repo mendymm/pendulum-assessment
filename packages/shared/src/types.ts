@@ -44,14 +44,58 @@ export const PointSchema = z.object({
   y: z.number(),
 });
 
+export const PendulumLocationSchema = z.object({
+  nodeId: NodeIdSchema,
+  bobRadius: BobRadiusSchema,
+  posistion: PointSchema,
+  anchorX: z.number(),
+});
+
+export const CommandSchema = z.discriminatedUnion("type", [
+  // reset's the pendulums position, and starts the sim
+  z.object({ type: z.literal("start") }),
+
+  // pause, but keep pendulum's position
+  z.object({ type: z.literal("pause") }),
+
+  // resume, but only from the paused state
+  z.object({ type: z.literal("resume") }),
+
+  // reset's the pendulums position, and stops the sim
+  z.object({ type: z.literal("stop") }),
+
+  // configure the pendulum: you can configure the pendulum at any status
+  z.object({ type: z.literal("configure"), config: PendulumConfigPatchSchema }),
+
+  // tick the simulation by DT, only valid from the running state
+  // includes the latest snapshot of our internal map of the world state.
+  // passing in world state as a snapshot, ensures our state machine is not reading a global map,
+  // and makes testing easier
+  z.object({
+    type: z.literal("tick"),
+    dt: z.number(),
+    worldState: z.array(PendulumLocationSchema),
+    now: z.number(),
+  }),
+]);
+export type Command = z.infer<typeof CommandSchema>;
+
+const COMMAND_TYPES = CommandSchema.options.map((o) => o.shape.type.value) as [Command["type"], ...Command["type"][]];
+export const CommandCountsSchema = z.record(z.enum(COMMAND_TYPES), z.number());
+
+export const CommandStatsSchema = z.object({
+  completed: CommandCountsSchema,
+  rejected: CommandCountsSchema,
+  noop: CommandCountsSchema,
+});
+
 export const SimSnapshotSchema = z.object({
   nodeId: NodeIdSchema,
   config: PendulumConfigSchema,
   status: SimStatusSchema,
   posistion: PointSchema,
   bobRadius: BobRadiusSchema,
-  commandsCompleted: z.record(z.string(), z.number()),
-  commandsRejected: z.record(z.string(), z.number()),
+  commandStats: CommandStatsSchema,
 });
 
 export const CollisionSchema = z.object({
@@ -62,13 +106,6 @@ export const CollisionSchema = z.object({
 
 // websocket message types
 
-export const PendulumLocationSchema = z.object({
-  nodeId: NodeIdSchema,
-  bobRadius: BobRadiusSchema,
-  posistion: PointSchema,
-  anchorX: z.number(),
-});
-
 export const WsEnvelopeSchema = z.discriminatedUnion("type", [
   // node → gateway: one node's latest position
   z.object({ type: z.literal("PendulumLocationUpdate"), data: PendulumLocationSchema }),
@@ -76,6 +113,8 @@ export const WsEnvelopeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("WorldSnapshot"), data: z.array(PendulumLocationSchema) }),
 ]);
 
+export type CommandCounts = z.infer<typeof CommandCountsSchema>;
+export type CommandStats = z.infer<typeof CommandStatsSchema>;
 export type BobRadius = z.infer<typeof BobRadiusSchema>;
 export type Point = z.infer<typeof PointSchema>;
 export type PendulumConfigPatch = z.infer<typeof PendulumConfigPatchSchema>;

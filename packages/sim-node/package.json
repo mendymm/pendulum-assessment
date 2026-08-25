@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "test": "vitest run",
+    "test": "vitest run --reporter=tree",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

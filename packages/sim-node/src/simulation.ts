@@ -7,15 +7,21 @@
 
 import {
   bobRadius,
+  type Command,
+  type CommandCounts,
+  type CommandStats,
+  CommandStatsSchema,
   defaultPendulumConfig,
   type NodeId,
-  type PendulumConfig,
-  type PendulumConfigPatch,
+  NodeIdSchema,
+  PendulumConfigSchema,
   type PendulumLocation,
   type Point,
   type SimSnapshot,
   type SimStatus,
+  SimStatusSchema,
 } from "@pendulum/shared/src/types";
+import { z } from "zod";
 import { execConfigure } from "./cmd_impl/execConfigure";
 import { execPause } from "./cmd_impl/execPause";
 import { execResume } from "./cmd_impl/execResume";
@@ -23,39 +29,19 @@ import { execStart } from "./cmd_impl/execStart";
 import { execStop } from "./cmd_impl/execStop";
 import { execTick } from "./cmd_impl/execTick";
 import type { NeighborsLocation } from "./gatewayWsConn";
-import type { PendulumState } from "./pendulum";
+import { type PendulumState, PendulumStateSchema } from "./pendulum";
 
-export interface Sim {
-  readonly nodeId: NodeId;
-  readonly config: PendulumConfig;
-  readonly status: SimStatus;
-  readonly pendulumState: PendulumState;
-  readonly commandsCompleted: CommandCounts;
-  readonly commandsRejected: CommandCounts;
-  readonly commandsNoop: CommandCounts;
-}
+export const SimSchema = z
+  .object({
+    nodeId: NodeIdSchema,
+    config: PendulumConfigSchema,
+    status: SimStatusSchema,
+    pendulumState: PendulumStateSchema,
+    commandStats: CommandStatsSchema,
+  })
+  .readonly();
 
-export type Command =
-  // reset's the pendulums position, and starts the sim
-  | { type: "start" }
-
-  // pause, but keep pendulum's position
-  | { type: "pause" }
-
-  // resume, but only from the paused state
-  | { type: "resume" }
-
-  // reset's the pendulums position, and stops the sim
-  | { type: "stop" }
-
-  // configure the pendulum: you can configure the pendulum at any status
-  | { type: "configure"; config: PendulumConfigPatch }
-
-  // tick the simulation by DT, only valid from the running state
-  // includes the latest snapshot of our internal map of the world state.
-  // passing in world state as a snapshot, ensures our state machine is not reading a global map,
-  // and makes testing easier
-  | { type: "tick"; dt: number; worldState: PendulumLocation[]; now: number };
+export type Sim = z.infer<typeof SimSchema>;
 
 export type Effect = { type: "reportLocation"; data: PendulumLocation };
 
@@ -70,9 +56,9 @@ export type Outcome =
   | { result: "rejected"; sim: Sim; rejection: Rejection }
   | { result: "noop"; sim: Sim };
 
-// how many commands of each type we've completed/rejected. same style as the WS
-// event tally: a map keyed by the union of command types, every key present at 0.
-export type CommandCounts = Record<Command["type"], number>;
+// how many commands of each type we've seen, grouped by outcome. same style as the WS
+// event tally: a map keyed by the union of command types, every key present at 0. the
+// three outcome buckets (completed / rejected / noop) live under one `commandStats` field.
 
 const zeroCounts = (): CommandCounts => ({
   start: 0,
@@ -83,10 +69,16 @@ const zeroCounts = (): CommandCounts => ({
   tick: 0,
 });
 
-// bump one command type's tally by one, returning a new map (keeps `Sim` immutable)
-const bumpCount = (counts: CommandCounts, type: Command["type"]): CommandCounts => ({
-  ...counts,
-  [type]: counts[type] + 1,
+const zeroStats = (): CommandStats => ({
+  completed: zeroCounts(),
+  rejected: zeroCounts(),
+  noop: zeroCounts(),
+});
+
+// bump one command type's tally in one outcome bucket by one, returning new stats (keeps `Sim` immutable)
+const bumpStats = (stats: CommandStats, bucket: keyof CommandStats, type: Command["type"]): CommandStats => ({
+  ...stats,
+  [bucket]: { ...stats[bucket], [type]: stats[bucket][type] + 1 },
 });
 
 // new sims always start with these defaults
@@ -99,26 +91,24 @@ export function createSim(nodeId: NodeId): Sim {
       angularVelocity: 0,
     },
     status: "stopped",
-    commandsCompleted: zeroCounts(),
-    commandsRejected: zeroCounts(),
-    commandsNoop: zeroCounts(),
+    commandStats: zeroStats(),
   };
 }
 
 export const ok = (nextSim: Sim, command: Command, effects: Effect[] = []): Outcome => ({
   result: "ok",
-  sim: { ...nextSim, commandsCompleted: bumpCount(nextSim.commandsCompleted, command.type) },
+  sim: { ...nextSim, commandStats: bumpStats(nextSim.commandStats, "completed", command.type) },
   effects,
 });
 
 export const noop = (nextSim: Sim, command: Command): Outcome => ({
   result: "noop",
-  sim: { ...nextSim, commandsNoop: bumpCount(nextSim.commandsNoop, command.type) },
+  sim: { ...nextSim, commandStats: bumpStats(nextSim.commandStats, "noop", command.type) },
 });
 
 export const reject = (nextSim: Sim, command: Command, reason: string): Outcome => ({
   result: "rejected",
-  sim: { ...nextSim, commandsRejected: bumpCount(nextSim.commandsRejected, command.type) },
+  sim: { ...nextSim, commandStats: bumpStats(nextSim.commandStats, "rejected", command.type) },
   rejection: { command, from: nextSim.status, reason },
 });
 

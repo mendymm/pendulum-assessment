@@ -1,8 +1,8 @@
-import { PendulumConfigPatchSchema } from "@pendulum/shared/src/types";
+import { type Command, PendulumConfigPatchSchema } from "@pendulum/shared/src/types";
 import type { Context, Hono } from "hono";
 import { z } from "zod";
 import type { Mailbox } from "./mailbox";
-import { type Command, type Outcome, type Sim, snapshot } from "./simulation";
+import { type Outcome, type Sim, snapshot } from "./simulation";
 
 export function addControlPlaneRoutes(app: Hono, inbox: Mailbox, getSim: () => Sim) {
   const submit = (command: Command): Promise<Outcome> => new Promise((reply) => inbox.push({ command, reply }));

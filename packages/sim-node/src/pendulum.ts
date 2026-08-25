@@ -1,11 +1,14 @@
 import type { PendulumConfig, PendulumLocation, Point } from "@pendulum/shared/src/types";
+import z from "zod";
 
-export type PendulumState = {
+export const PendulumStateSchema = z.object({
   // radians from vertical, 0 = hanging straight down
-  angle: number;
+  angle: z.number(),
   // in radians/sec
-  angularVelocity: number;
-};
+  angularVelocity: z.number(),
+});
+
+export type PendulumState = z.infer<typeof PendulumStateSchema>;
 
 // returns the first neighbor whose bob overlaps ours, returns undefined when nothing is close enough.
 export function detectCollision(

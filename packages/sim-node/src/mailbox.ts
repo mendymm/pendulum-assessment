@@ -3,7 +3,8 @@
  * but I still think it's fun. Sue me ;)
  */
 
-import type { Command, Outcome } from "./simulation";
+import type { Command } from "@pendulum/shared/src/types";
+import type { Outcome } from "./simulation";
 
 export interface Mailbox {
   push(item: Envelope): void;
