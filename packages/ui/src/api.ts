@@ -78,10 +78,21 @@ export async function configureNode(nodeId: number, patch: PendulumConfigPatch):
 }
 
 /**
- * A single frame from the gateway's live feed: where every bob is.
+ * An active collision-restart countdown, straight from the gateway. `restartAt` is an absolute
+ * epoch-ms instant every node and the UI count down to, so there's nothing to infer.
+ */
+export interface RestartInfo {
+  episode: number;
+  restartAt: number;
+}
+
+/**
+ * A single frame from the gateway's live feed: where every bob is, plus an optional restart
+ * countdown (non-null only while a collision episode is counting down).
  */
 export interface FeedFrame {
   locations: Map<number, PendulumLocation>;
+  restart: RestartInfo | null;
 }
 
 /** Connection state of the live feed socket, surfaced to the UI for a status indicator. */
@@ -154,7 +165,7 @@ export function subscribeLocations(
         return;
       }
       if (typeof raw !== "object" || raw === null || !("locations" in raw)) return;
-      const { locations: rawLocations } = raw as { locations: unknown };
+      const { locations: rawLocations, restart: rawRestart } = raw as { locations: unknown; restart?: unknown };
 
       const locations = new Map<number, PendulumLocation>();
       if (typeof rawLocations === "object" && rawLocations !== null) {
@@ -164,7 +175,14 @@ export function subscribeLocations(
         }
       }
 
-      onUpdate({ locations });
+      // restart is null unless a collision countdown is live; only accept a fully-formed marker.
+      let restart: RestartInfo | null = null;
+      if (typeof rawRestart === "object" && rawRestart !== null) {
+        const { episode, restartAt } = rawRestart as Record<string, unknown>;
+        if (typeof episode === "number" && typeof restartAt === "number") restart = { episode, restartAt };
+      }
+
+      onUpdate({ locations, restart });
     };
 
     // An error (refused connection, dropped upgrade) doesn't always emit a clean

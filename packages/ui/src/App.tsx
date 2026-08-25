@@ -14,6 +14,7 @@ import {
   type FeedHandle,
   type FeedStatus,
   fetchAllSnapshots,
+  type RestartInfo,
   randomizeAll,
   subscribeLocations,
 } from "./api";
@@ -47,6 +48,9 @@ export function App() {
   // Live bob positions streamed from the gateway (keyed by nodeId); drives the
   // canvas so running pendulums actually swing.
   const [locations, setLocations] = useState<Map<number, PendulumLocation>>(() => new Map());
+  // Active collision-restart countdown pushed by the gateway (null when idle). Drives the
+  // canvas overlay — no more inferring "who collided" from the locations map.
+  const [restart, setRestart] = useState<RestartInfo | null>(null);
   // Live-feed socket state for the debug indicator, plus a handle so the Reconnect
   // button can force an immediate reconnect.
   const [feedStatus, setFeedStatus] = useState<FeedStatus>("connecting");
@@ -54,6 +58,7 @@ export function App() {
   useEffect(() => {
     const handle = subscribeLocations((frame) => {
       setLocations(frame.locations);
+      setRestart(frame.restart);
     }, setFeedStatus);
     feedRef.current = handle;
     return () => {
@@ -241,6 +246,7 @@ export function App() {
           ref={canvasRef}
           pendulums={pendulums}
           locations={locations}
+          restart={restart}
           onViewChange={setView}
           onCursorChange={setCursor}
           onOpenConfig={openFromAnchor}

@@ -1,5 +1,6 @@
 import type { PendulumLocation } from "@pendulum/shared/src/types";
 import { Fragment, forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import type { RestartInfo } from "../api";
 import { bobColor, mocha } from "../theme";
 import { AnchorHandle } from "./AnchorHandle";
 import { BobHandle, type BobPose } from "./BobHandle";
@@ -75,6 +76,8 @@ interface CanvasProps {
   // Live bob positions from the gateway feed, keyed by nodeId. A node present here
   // renders at its swinging position; absent nodes fall back to config geometry.
   locations?: Map<number, PendulumLocation>;
+  // Active collision-restart countdown (null when idle); renders the countdown overlay.
+  restart?: RestartInfo | null;
   onViewChange?: (view: CameraView) => void;
   onCursorChange?: (cursor: WorldPoint | null) => void;
   onOpenConfig?: (nodeId: number, e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -96,6 +99,7 @@ export const Canvas = memo(
     {
       pendulums,
       locations,
+      restart,
       onViewChange,
       onCursorChange,
       onOpenConfig,
@@ -343,7 +347,60 @@ export const Canvas = memo(
             );
           })}
         </div>
+
+        {/* Collision-restart countdown, driven by the gateway's explicit absolute restartAt. */}
+        {restart && <RestartCountdown restartAt={restart.restartAt} />}
       </div>
     );
   }),
 );
+
+/**
+ * Centered overlay counting down to the shared restart instant. Ticks itself via
+ * requestAnimationFrame off the absolute `restartAt` — the gateway feed goes quiet while the
+ * world is frozen, so the countdown can't lean on incoming frames.
+ */
+function RestartCountdown({ restartAt }: { restartAt: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      setNow(Date.now());
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const seconds = Math.max(0, restartAt - now) / 1000;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        pointerEvents: "none",
+      }}
+    >
+      <div
+        style={{
+          background: mocha.crust,
+          border: `1px solid ${mocha.red}`,
+          borderRadius: 12,
+          padding: "1rem 1.75rem",
+          textAlign: "center",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+        }}
+      >
+        <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.1em", color: mocha.red }}>
+          Collision · restarting
+        </div>
+        <div style={{ fontSize: "2.6rem", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: mocha.text }}>
+          {seconds.toFixed(1)}s
+        </div>
+      </div>
+    </div>
+  );
+}
