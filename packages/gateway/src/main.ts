@@ -7,7 +7,14 @@ import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import { addControlRoutes } from "./api";
 import { startGatewayDebugLoop } from "./debug";
-import { countSent, lastWorldChangeAt, pendulumLocations, simWsHandler, startLocationBroadcast } from "./wsHandler";
+import {
+  countSent,
+  lastWorldChangeAt,
+  pendulumLocations,
+  simWsHandler,
+  startLocationBroadcast,
+  uiRestart,
+} from "./wsHandler";
 
 const app = new Hono();
 
@@ -24,9 +31,12 @@ app.get(
     let lastFrameSentAt = 0;
 
     // Serialize the current world into a feed frame — the same shape the interval pushes.
+    // `restart` is non-null only while a collision countdown is live, giving the UI an explicit
+    // absolute `restartAt` to count down to (no inferring from the locations map).
     const currentFrame = () =>
       JSON.stringify({
         locations: Object.fromEntries(pendulumLocations),
+        restart: uiRestart,
       });
 
     return {

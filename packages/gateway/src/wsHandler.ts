@@ -22,6 +22,32 @@ export let lastWorldChangeAt = 0;
 export const wsRecvCounts: Record<string, number> = {};
 export const wsSentCounts: Record<string, number> = {};
 
+// --- collision-restart barrier (the gateway is the star-topology coordinator) ---
+//
+//   running ──collisionDetected──▶ collecting-acks ──all acks / timeout──▶ counting-down ──5s──▶ running
+//
+// While anything other than `running`, the gateway holds a "collision detected" marker and
+// ignores further collisionDetected events — this serializes episodes end-to-end, which is what
+// lets the nodes fence stale restarts on status alone (see the node's execRelaunch).
+type RestartPhase = "running" | "collecting-acks" | "counting-down";
+let restartPhase: RestartPhase = "running";
+
+// monotonic episode id; bumped when a handshake opens. Echoed by nodes in their acks so a late
+// ack from a closed episode is easy to discard.
+let currentEpisode = 0;
+
+// membership snapshot: the nodeIds we're still waiting on for THIS episode. Captured when the
+// handshake opens; a node that disconnects mid-handshake is dropped from it so the barrier can
+// still complete (survivors-proceed), and the ack timeout is the last-resort backstop.
+let pendingAcks = new Set<number>();
+let ackTimer: ReturnType<typeof setTimeout> | null = null;
+let restartTimer: ReturnType<typeof setTimeout> | null = null;
+
+// UI-facing restart marker, included in the live feed frame while a countdown is running so the
+// UI can render an explicit countdown to `restartAt` instead of inferring one. null when idle.
+// (ESM live binding: the UI feed in main.ts reads the current value.)
+export let uiRestart: { episode: number; restartAt: number } | null = null;
+
 const bump = (counts: Record<string, number>, key: string) => {
   counts[key] = (counts[key] ?? 0) + 1;
 };
@@ -42,6 +68,11 @@ export const simWsHandler = upgradeWebSocket((c) => {
     onClose: () => {
       sockets.delete(nodeId);
       pendulumLocations.delete(nodeId);
+      // If this node was part of an in-flight barrier, stop waiting on it — a gone node must
+      // not be able to stall the handshake. This may be the ack we were waiting for.
+      if (restartPhase === "collecting-acks" && pendingAcks.delete(nodeId) && pendingAcks.size === 0) {
+        completeBarrier();
+      }
       console.log(`sim-node ${nodeId} disconnected (${sockets.size} total)`);
     },
   };
@@ -65,13 +96,84 @@ function onMessage(evt: MessageEvent<WSMessageReceive>) {
       // fixed simHz cadence by `broadcastLocations` — this just records the latest position.
       break;
     }
+    case "collisionDetected": {
+      // First report of a fresh episode opens the barrier; while an episode is in flight the
+      // marker makes every further collision a no-op (we don't stack episodes).
+      if (restartPhase === "running") openHandshake();
+      break;
+    }
+    case "collisionAck": {
+      onAck(wsEnvelope.data.nodeId, wsEnvelope.data.episode);
+      break;
+    }
     case "WorldSnapshot":
+    case "collisionInducedRestart":
+    case "restart":
       // the gateway produces these; a node should never send one to us.
-      console.log("unexpected WorldSnapshot from a node, ignoring");
+      console.log(`unexpected ${wsEnvelope.type} from a node, ignoring`);
       break;
     default:
       assertNever(wsEnvelope);
   }
+}
+
+// Open a restart episode: bump the id, snapshot who must ack, broadcast the STOP+handshake, and
+// arm the ack-timeout backstop. If somehow nobody is connected, the barrier is trivially done.
+function openHandshake() {
+  currentEpisode += 1;
+  restartPhase = "collecting-acks";
+  pendingAcks = new Set(sockets.keys());
+  const payload = JSON.stringify({ type: "collisionInducedRestart", episode: currentEpisode } satisfies WsEnvelope);
+  void sendToAll(sockets.values(), payload, "collisionInducedRestart");
+  if (pendingAcks.size === 0) {
+    completeBarrier();
+    return;
+  }
+  ackTimer = setTimeout(onAckTimeout, RUNTIME_CONFIG.ackTimeoutMs);
+}
+
+// A node reported it has halted for this episode. Ignore stale/duplicate acks; complete the
+// barrier once the last awaited node checks in.
+function onAck(nodeId: number, episode: number) {
+  if (restartPhase !== "collecting-acks" || episode !== currentEpisode) return;
+  if (pendingAcks.delete(nodeId) && pendingAcks.size === 0) completeBarrier();
+}
+
+// The barrier didn't fully close in time: proceed with whoever acked (survivors-proceed policy)
+// so one silent node can't freeze the simulation. The dropped nodes just miss this restart.
+function onAckTimeout() {
+  if (restartPhase !== "collecting-acks") return;
+  console.log(`restart barrier: ack timeout, proceeding without node(s) [${[...pendingAcks].join(", ")}]`);
+  completeBarrier();
+}
+
+// Barrier closed. Start the shared countdown: everyone (nodes + UI) targets the same absolute
+// `restartAt`, so the "wait 5s" happens in lockstep and no single clock is authoritative.
+function completeBarrier() {
+  if (ackTimer !== null) {
+    clearTimeout(ackTimer);
+    ackTimer = null;
+  }
+  restartPhase = "counting-down";
+  const restartAt = Date.now() + RUNTIME_CONFIG.restartSec * 1000;
+  uiRestart = { episode: currentEpisode, restartAt };
+  markWorldChanged(); // nudge the UI feed to push a frame carrying the countdown
+  const payload = JSON.stringify({ type: "restart", episode: currentEpisode, at: restartAt } satisfies WsEnvelope);
+  void sendToAll(sockets.values(), payload, "restart");
+  restartTimer = setTimeout(finishEpisode, RUNTIME_CONFIG.restartSec * 1000);
+}
+
+// Countdown elapsed (in step with the nodes' own relaunch timers): clear the episode and let
+// normal location fan-out resume as nodes tick again.
+function finishEpisode() {
+  if (restartTimer !== null) {
+    clearTimeout(restartTimer);
+    restartTimer = null;
+  }
+  restartPhase = "running";
+  pendingAcks = new Set();
+  uiRestart = null;
+  markWorldChanged(); // push a frame that clears the countdown on the UI
 }
 
 function markWorldChanged() {
