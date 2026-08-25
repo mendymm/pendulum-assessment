@@ -30,13 +30,9 @@ app.get(
       });
 
     return {
+      
       onOpen: (_evt, ws) => {
-        // Push the current state immediately so a client connecting to a paused/idle
-        // sim (where lastWorldChangeAt never advances) sees the world instead of a
-        // blank canvas that looks like a dead connection.
-        ws.send(currentFrame());
-        countSent("uiFrame");
-        lastFrameSentAt = Date.now();
+        lastFrameSentAt = -1;
 
         timer = setInterval(() => {
           // Only push when the world actually changed (a new location) since our last
