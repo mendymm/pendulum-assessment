@@ -63,7 +63,7 @@ const defineCommandStates = <const S extends CommandStates>(spec: S & ValidatePa
 
 export const COMMAND_STATES = {
   configure: defineCommandStates({
-    accepted: ["paused", "running", "stopped"],
+    accepted: ["paused", "running", "stopped", "restarting"],
     noop: [],
     rejected: [],
   }),
@@ -71,11 +71,11 @@ export const COMMAND_STATES = {
   start: defineCommandStates({
     accepted: ["stopped"],
     noop: [],
-    rejected: ["paused", "running"],
+    rejected: ["paused", "running", "restarting"],
   }),
 
   stop: defineCommandStates({
-    accepted: ["paused", "running"],
+    accepted: ["paused", "running", "restarting"],
     noop: [],
     rejected: ["stopped"],
   }),
@@ -83,19 +83,42 @@ export const COMMAND_STATES = {
   tick: defineCommandStates({
     accepted: ["running"],
     noop: [],
-    rejected: ["paused", "stopped"],
+    rejected: ["paused", "stopped", "restarting"],
   }),
 
   pause: defineCommandStates({
     accepted: ["running"],
     noop: [],
-    rejected: ["paused", "stopped"],
+    rejected: ["paused", "stopped", "restarting"],
   }),
 
   resume: defineCommandStates({
     accepted: ["paused"],
     noop: ["running"],
-    rejected: ["stopped"],
+    rejected: ["stopped", "restarting"],
+  }),
+
+  // gateway opened a restart episode: accepted from every status (even a paused/stopped node
+  // joins the barrier so it can complete, then relaunches with everyone else).
+  haltForRestart: defineCommandStates({
+    accepted: ["running", "paused", "stopped", "restarting"],
+    noop: [],
+    rejected: [],
+  }),
+
+  // barrier done: only meaningful while restarting (arms the relaunch timer); a stale one from
+  // any other status is a no-op.
+  restart: defineCommandStates({
+    accepted: ["restarting"],
+    noop: ["running", "paused", "stopped"],
+    rejected: [],
+  }),
+
+  // scheduled relaunch instant: only meaningful while restarting (→ running); otherwise a no-op.
+  relaunch: defineCommandStates({
+    accepted: ["restarting"],
+    noop: ["running", "paused", "stopped"],
+    rejected: [],
   }),
 } satisfies Record<Command["type"], CommandStates>;
 
@@ -114,6 +137,14 @@ export const commandArb = (type: Command["type"]): fc.Arbitrary<Command> => {
       return fc
         .record({ dt: fc.double({ min: 0, max: 1, noNaN: true }), now: fc.nat() })
         .map(({ dt, now }) => ({ type, dt, now, worldState: [] }));
+    // the restart-protocol commands carry an episode (and `restart` an absolute instant). the
+    // outcome must be status-only, so we fuzz these payloads to prove it never depends on them.
+    case "haltForRestart":
+      return fc.nat().map((episode) => ({ type, episode }));
+    case "relaunch":
+      return fc.nat().map((episode) => ({ type, episode }));
+    case "restart":
+      return fc.record({ episode: fc.nat(), at: fc.nat() }).map(({ episode, at }) => ({ type, episode, at }));
     default:
       return fc.constant({ type } as Command);
   }
@@ -134,6 +165,7 @@ interface Edge {
 const EDGES: readonly Edge[] = [
   { from: "stopped", command: { type: "start" }, to: "running" },
   { from: "running", command: { type: "pause" }, to: "paused" },
+  { from: "running", command: { type: "haltForRestart", episode: 0 }, to: "restarting" },
 ];
 
 const INITIAL_STATUS = createSim(NODE_ID).status; // "stopped"

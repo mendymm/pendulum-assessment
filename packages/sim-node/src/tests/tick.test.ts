@@ -58,7 +58,9 @@ describe("tick command", () => {
 
     expect(out.sim.pendulumState).toEqual(before.pendulumState); // no time elapsed → no movement
     expect(out.effects).toHaveLength(1);
-    expect(out.effects[0].data.posistion).toEqual(posistion(before));
+    const [effect] = out.effects;
+    if (effect.type !== "reportLocation") throw new Error("expected reportLocation");
+    expect(effect.data.posistion).toEqual(posistion(before));
   });
 
   it("is a pure function of (sim, dt)", () => {
