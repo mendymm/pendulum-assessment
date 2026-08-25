@@ -7,11 +7,14 @@
 
 import {
   bobRadius,
+  type Collision,
+  type CollisionAck,
   type Command,
   type CommandCounts,
   type CommandStats,
   CommandStatsSchema,
   defaultPendulumConfig,
+  type Episode,
   type NodeId,
   NodeIdSchema,
   PendulumConfigSchema,
@@ -23,7 +26,10 @@ import {
 } from "@pendulum/shared/src/types";
 import { z } from "zod";
 import { execConfigure } from "./cmd_impl/execConfigure";
+import { execHaltForRestart } from "./cmd_impl/execHaltForRestart";
 import { execPause } from "./cmd_impl/execPause";
+import { execRelaunch } from "./cmd_impl/execRelaunch";
+import { execRestart } from "./cmd_impl/execRestart";
 import { execResume } from "./cmd_impl/execResume";
 import { execStart } from "./cmd_impl/execStart";
 import { execStop } from "./cmd_impl/execStop";
@@ -43,7 +49,15 @@ export const SimSchema = z
 
 export type Sim = z.infer<typeof SimSchema>;
 
-export type Effect = { type: "reportLocation"; data: PendulumLocation };
+export type Effect =
+  // report our latest bob position to the gateway (fanned out to the world + the UI)
+  | { type: "reportLocation"; data: PendulumLocation }
+  // tell the gateway we hit someone — this opens a restart episode
+  | { type: "collisionDetected"; data: Collision }
+  // acknowledge our participation in a restart episode's barrier
+  | { type: "collisionAck"; data: CollisionAck }
+  // arm a timer to relaunch at the absolute instant `at` (fired by the gateway's `restart`)
+  | { type: "scheduleRelaunch"; at: number; episode: Episode };
 
 export interface Rejection {
   command: Command;
@@ -67,6 +81,9 @@ const zeroCounts = (): CommandCounts => ({
   stop: 0,
   configure: 0,
   tick: 0,
+  haltForRestart: 0,
+  restart: 0,
+  relaunch: 0,
 });
 
 const zeroStats = (): CommandStats => ({
@@ -131,6 +148,12 @@ export function transition(sim: Sim, command: Command): Outcome {
       return execConfigure(sim, command);
     case "tick":
       return execTick(sim, command);
+    case "haltForRestart":
+      return execHaltForRestart(sim, command);
+    case "restart":
+      return execRestart(sim, command);
+    case "relaunch":
+      return execRelaunch(sim, command);
   }
 }
 

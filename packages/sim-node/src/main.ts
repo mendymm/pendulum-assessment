@@ -27,7 +27,7 @@ async function startServer(nodeId: NodeId) {
   addControlPlaneRoutes(app, inbox, () => sim);
   serve({ fetch: app.fetch, hostname: "127.0.0.1", port: listingPort });
 
-  const { neighbors, sendWsMessage } = connectToGateway(nodeId);
+  const { neighbors, sendWsMessage } = connectToGateway(nodeId, inbox);
 
   // the only writer of `sim` during operation
   const consume = async () => {
@@ -43,7 +43,7 @@ async function startServer(nodeId: NodeId) {
 
       switch (outcome.result) {
         case "ok":
-          executeEffects(outcome.effects, sendWsMessage);
+          executeEffects(outcome.effects, sendWsMessage, inbox);
           break;
         case "rejected":
           break;
