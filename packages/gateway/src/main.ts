@@ -30,7 +30,6 @@ app.get(
       });
 
     return {
-      
       onOpen: (_evt, ws) => {
         lastFrameSentAt = -1;
 

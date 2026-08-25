@@ -29,7 +29,7 @@ import { execStart } from "./cmd_impl/execStart";
 import { execStop } from "./cmd_impl/execStop";
 import { execTick } from "./cmd_impl/execTick";
 import type { NeighborsLocation } from "./gatewayWsConn";
-import { type PendulumState, PendulumStateSchema } from "./pendulum";
+import { PendulumStateSchema } from "./pendulum";
 
 export const SimSchema = z
   .object({

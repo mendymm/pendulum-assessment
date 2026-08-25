@@ -12,7 +12,7 @@ export const AngleSchema = z.number().min(-Math.PI).max(Math.PI).brand<"Angle">(
 export const MassSchema = z.number().positive().brand<"Mass">();
 
 // in meters
-export const LengthSchema = z.number().positive().max(7).brand<"Length">();
+export const LengthSchema = z.number().positive().max(50).brand<"Length">();
 
 // in meters
 export const BobRadiusSchema = z.number().positive().brand<"BobRadius">();

@@ -1,3 +1,4 @@
+import { LengthSchema } from "@pendulum/shared/src/types";
 import { useRef } from "react";
 
 interface CameraLike {
@@ -9,7 +10,7 @@ interface CameraLike {
 const MIN_GRAB_PX = 20; // keep tiny bobs grabbable
 const ANGLE_LIMIT = Math.PI / 2; // never lift the bob above the beam (y = 0)
 const LENGTH_MIN = 0.5; // m — don't let the string collapse to zero
-const LENGTH_MAX = 7; // m — matches LengthSchema's cap
+const LENGTH_MAX = LengthSchema._zod.bag.maximum ?? 100;
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
