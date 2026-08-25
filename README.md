@@ -189,10 +189,10 @@ One approach I might take is to have a node mesh, where each node talks to every
 
 So having a central gateway solves this problem, each node updates the gateway, the gateway then updates each other node.
 
-The gateway does not broadcast `PendulumLocationUpdate` events. If we have 50 nodes emiting `PendulumLocationUpdate` 120hz, that would required the gateway to send 294000 ws messages/second.
-Instead, the gateway updates an in-memory map, and sends the content of that map to all nodes at 120hz. This results in about the same acuuracy as the a strict broadcast appraoch would give us (each node is updated with the location of all other nodes at 120hz). But we only send 6000 events/sec. 
+The gateway does not broadcast `PendulumLocationUpdate` events. If we have 50 nodes emitting `PendulumLocationUpdate` at 120hz, that would require the gateway to send 294000 ws messages/second.
+Instead, the gateway updates an in-memory map, and sends the content of that map to all nodes at 120hz. This results in about the same accuracy as a strict broadcast approach would give us (each node is updated with the location of all other nodes at 120hz). But we only send 6000 events/sec. 
 
-If effect the number of events goes from `O(<N = simCount * simHz>^2)` to `O(<N = simCount * simHz>)`. Please note that the we are still `O(N^2)` on the number of bytes we send to each node, but that is much less of a issue, and if we really cared we can easly switch to protobuf, or even just a simple zstd/brotli compression
+In effect the number of events goes from `O(<N = simCount * simHz>^2)` to `O(<N = simCount * simHz>)`. Please note that we are still `O(N^2)` on the number of bytes we send to each node, but that is much less of an issue, and if we really cared we can easily switch to protobuf, or even just a simple zstd/brotli compression
 
 # Tests
 
