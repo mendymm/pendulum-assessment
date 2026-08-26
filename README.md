@@ -229,4 +229,4 @@ Unlike the rest of the backend code, the tests are llm generated, and I review t
 Bugs that I found but did not yet have the chance to fix
 
 
-- If you run `npm start` go to UI and mess with the ghosts, then ctl+x on the server, and start it again, the server does not push up updated ghost locations, and the UI ends up with stale ghost state
+- If you run `npm start` go to UI and mess with the ghosts, then ctl+c on the server, and start it again, the server does not push up updated ghost locations, and the UI ends up with stale ghost state
